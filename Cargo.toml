@@ -1,0 +1,11 @@
+[package]
+name = "my-fake-sql"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# msql-srv = "0.9.6"
+# msql-srv = { git = "https://github.com/jonhoo/msql-srv.git" }
+msql-srv = { path = "../msql-srv" }
