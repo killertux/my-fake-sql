@@ -6,6 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# msql-srv = "0.9.6"
-# msql-srv = { git = "https://github.com/jonhoo/msql-srv.git" }
-msql-srv = { path = "../msql-srv" }
+msql-srv = { git = "https://github.com/killertux/msql-srv.git", branch = "feature/secure-connection" }
+itertools = "0.10"
+serde_yaml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+reqwest = {version = "0.11", features = ["blocking"]}
+ritelinked = "0.3"

@@ -1,0 +1,4 @@
+- port: 4242
+  target: read-pay-cross-border
+- port: 4243
+  target: read-cerberus-cross-border
