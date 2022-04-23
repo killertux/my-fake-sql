@@ -10,7 +10,7 @@ Than, copy `config.yml.example` as `config.yml` and edit is as you want.
 
 Than, you will need to install rust and cargo in your machine. Details [here](https://rustup.rs/).
 
-Finally, you can just type `cargo run` and the fake mysql server will start. You can also compile it as realease and run it if you want the best performance.
+Finally, you can just type `cargo run` and the fake mysql server will start. You can also compile it as release and run it using `cargo run --release`.
 
 ## Connecting with JetBrains
 
