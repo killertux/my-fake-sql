@@ -21,7 +21,9 @@ fn main() -> std::io::Result<()> {
     for config in configs {
         thread::spawn(move || tcp_listener(config));
     }
-    loop {}
+    loop {
+        thread::park();
+    }
 }
 
 fn tcp_listener(config: YamlTargetConfig) -> std::io::Result<()> {
