@@ -1,4 +1,4 @@
-use super::{QueryExecutor, QueryResult};
+use super::{QueryExecutor, ReaderQueryResult};
 use std::io::{Cursor, Result};
 use std::process::Command;
 
@@ -13,7 +13,9 @@ impl Runops {
 }
 
 impl QueryExecutor for Runops {
-    fn query(&mut self, query: &str) -> Result<QueryResult> {
+    type QueryResult = ReaderQueryResult;
+
+    fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
         let output = Command::new("runops")
             .arg("tasks")
             .arg("create")
@@ -28,8 +30,8 @@ impl QueryExecutor for Runops {
         if String::from_utf8_lossy(&output.stdout[..8]) == "https://" {
             let url = String::from_utf8_lossy(&output.stdout);
             let body = reqwest::blocking::get(url.as_ref()).expect("Error getting data from URL");
-            return Ok(QueryResult::new(body));
+            return Ok(Some(ReaderQueryResult::new(body)));
         }
-        Ok(QueryResult::new(Cursor::new(output.stdout)))
+        Ok(Some(ReaderQueryResult::new(Cursor::new(output.stdout))))
     }
 }

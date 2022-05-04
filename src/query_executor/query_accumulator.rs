@@ -1,4 +1,4 @@
-use super::{QueryExecutor, QueryResult};
+use super::QueryExecutor;
 use itertools::Itertools;
 use ritelinked::LinkedHashSet;
 use std::io::Result;
@@ -21,10 +21,11 @@ impl<T> QueryExecutor for QueryAccumulator<T>
 where
     T: QueryExecutor,
 {
-    fn query(&mut self, query: &str) -> Result<QueryResult> {
+    type QueryResult = T::QueryResult;
+    fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
         if query.starts_with("SET") {
             self.acc.insert(query.to_string());
-            return Ok(QueryResult::empty());
+            return Ok(None);
         }
         if self.acc.is_empty() {
             return self.executor.query(query);

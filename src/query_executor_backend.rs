@@ -1,4 +1,4 @@
-use super::query_executor::QueryExecutor;
+use super::query_executor::{QueryExecutor, QueryResult};
 use msql_srv::*;
 use std::io::{Error, Read, Result, Write};
 
@@ -12,9 +12,10 @@ impl<T> Backend<T> {
     }
 }
 
-impl<W: Write + Read, T> MysqlShim<W> for Backend<T>
+impl<W: Write + Read, T, R> MysqlShim<W> for Backend<T>
 where
-    T: QueryExecutor,
+    T: QueryExecutor<QueryResult = R>,
+    R: QueryResult,
 {
     type Error = Error;
 
@@ -32,21 +33,27 @@ where
 
     fn on_query(&mut self, query: &str, results: QueryResultWriter<W>) -> Result<()> {
         println!("Query {}", query);
-        let (columns, rows) = self.executor.query(query)?.get_data();
-        let columns = columns?;
-        if columns.is_empty() {
-            return results.completed(0, 0);
+        let result = self.executor.query(query)?;
+        match result {
+            Some(query_result) => {
+                let (columns, rows) = query_result.get_data();
+                let columns = columns?;
+                if columns.is_empty() {
+                    return results.completed(0, 0);
+                }
+                let mut rw = results.start(&columns)?;
+                let mut i = 0;
+                for row in rows {
+                    i += 1;
+                    rw.write_row(
+                        row?.into_iter()
+                            .map(|value| if value == "NULL" { None } else { Some(value) }), // We should probably move this out to another place
+                    )?;
+                }
+                println!("Number of rows: {}", i);
+                rw.finish()
+            }
+            None => results.completed(0, 0),
         }
-        let mut rw = results.start(&columns)?;
-        let mut i = 0;
-        for row in rows {
-            i += 1;
-            rw.write_row(
-                row?.into_iter()
-                    .map(|value| if value == "NULL" { None } else { Some(value) }), // We should probably move this out to another place
-            )?;
-        }
-        println!("Number of rows: {}", i);
-        rw.finish()
     }
 }

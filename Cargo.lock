@@ -807,7 +807,7 @@ dependencies = [
 [[package]]
 name = "msql-srv"
 version = "0.9.6"
-source = "git+https://github.com/killertux/msql-srv.git?branch=feature/secure-connection#fdfbcbe6530c46d8741133fec1145bdb6e12a64c"
+source = "git+https://github.com/killertux/msql-srv.git?branch=feature/secure-connection#ab6c8143f3a5a61a00a17eb42cfc00fb26384554"
 dependencies = [
  "byteorder",
  "chrono",
@@ -826,6 +826,7 @@ dependencies = [
  "ritelinked",
  "serde",
  "serde_yaml",
+ "sqlparser",
 ]
 
 [[package]]
@@ -1378,6 +1379,15 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "sqlparser"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e9a527b68048eb95495a1508f6c8395c8defcff5ecdbe8ad4106d08a2ef2a3c"
+dependencies = [
+ "log",
+]
 
 [[package]]
 name = "static_assertions"

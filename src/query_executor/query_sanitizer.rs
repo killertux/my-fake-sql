@@ -1,4 +1,4 @@
-use super::{QueryExecutor, QueryResult};
+use super::QueryExecutor;
 use itertools::Itertools;
 use std::io::Result;
 
@@ -14,12 +14,13 @@ impl<T> QueryExecutor for QuerySanitizer<T>
 where
     T: QueryExecutor,
 {
-    fn query(&mut self, query: &str) -> Result<QueryResult> {
+    type QueryResult = T::QueryResult;
+    fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
         let mut query: String = String::from(query.trim());
         if query.starts_with('/') {
             query = remove_comments_from_the_start(query);
         }
-        self.0.query(&query)
+        self.0.query(&query.replace("@@language", "'english'"))
     }
 }
 
