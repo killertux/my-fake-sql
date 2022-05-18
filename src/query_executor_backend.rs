@@ -1,14 +1,19 @@
 use super::query_executor::{QueryExecutor, QueryResult};
+use msql_srv::Column;
 use msql_srv::*;
 use std::io::{Error, Read, Result, Write};
 
 pub struct Backend<T> {
     executor: T,
+    prepared_statements: Vec<String>,
 }
 
 impl<T> Backend<T> {
     pub fn new(executor: T) -> Self {
-        Self { executor }
+        Self {
+            executor,
+            prepared_statements: Vec::new(),
+        }
     }
 }
 
@@ -19,16 +24,46 @@ where
 {
     type Error = Error;
 
-    fn on_prepare(&mut self, _: &str, info: StatementMetaWriter<W>) -> Result<()> {
-        println!("--- prepare ---");
-        info.reply(42, &[], &[])
+    fn on_prepare(&mut self, query: &str, info: StatementMetaWriter<W>) -> Result<()> {
+        self.prepared_statements.push(query.to_string());
+        let params: Vec<Column> = query
+            .chars()
+            .filter(|character| *character == '?')
+            .map(|_| Column {
+                table: "none".to_string(),
+                column: "?".to_string(),
+                coltype: ColumnType::MYSQL_TYPE_STRING,
+                colflags: ColumnFlags::empty(),
+            })
+            .collect();
+        info.reply((self.prepared_statements.len() - 1) as u32, &params, &[])
     }
-    fn on_execute(&mut self, _: u32, _: ParamParser, results: QueryResultWriter<W>) -> Result<()> {
-        println!("--- Execute ---");
-        results.completed(0, 0)
+    fn on_execute(
+        &mut self,
+        statement_id: u32,
+        pp: ParamParser,
+        results: QueryResultWriter<W>,
+    ) -> Result<()> {
+        let query = self
+            .prepared_statements
+            .get(statement_id as usize)
+            .map(|query| query.clone());
+        match query {
+            Some(mut query) => {
+                for param in pp.into_iter() {
+                    let value_str: &str = param.value.into();
+                    query = query.replacen("?", &format!("\'{}\'", value_str), 1);
+                }
+                self.on_query(&query, results)
+            }
+            None => results.error(
+                ErrorKind::ER_STMT_HAS_NO_OPEN_CURSOR,
+                &"Statement not found".as_bytes(),
+            ),
+        }
     }
-    fn on_close(&mut self, _: u32) {
-        println!("--- Close ---");
+    fn on_close(&mut self, statement_id: u32) {
+        self.prepared_statements.remove(statement_id as usize);
     }
 
     fn on_query(&mut self, query: &str, results: QueryResultWriter<W>) -> Result<()> {
