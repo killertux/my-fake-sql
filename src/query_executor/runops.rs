@@ -26,12 +26,17 @@ impl QueryExecutor for Runops {
             .arg("-s")
             .arg(query)
             .output()?;
-
-        if String::from_utf8_lossy(&output.stdout[..8]) == "https://" {
+        if output.stdout.len() > 9 && String::from_utf8_lossy(&output.stdout[..8]) == "https://" {
             let url = String::from_utf8_lossy(&output.stdout);
             let body = reqwest::blocking::get(url.as_ref()).expect("Error getting data from URL");
             return Ok(Some(ReaderQueryResult::new(body)));
         }
+        if output.stdout.len() > 25
+            && String::from_utf8_lossy(&output.stdout[..24]) == "Task returned empty logs"
+        {
+            return Ok(None);
+        }
+
         Ok(Some(ReaderQueryResult::new(Cursor::new(output.stdout))))
     }
 }
