@@ -17,3 +17,8 @@ Finally, you can just type `cargo run` and the fake mysql server will start. You
 Create a new MySQL data source. As the host use `127.0.0.1` and use the port that you configured in the `config.yml`file. Add a stub user and password. DO NOT type a database.
 
 This should be enough.
+
+## Throubleshooting
+
+Follow [this](https://stackoverflow.com/questions/52522565/git-is-not-working-after-macos-update-xcrun-error-invalid-active-developer-pa?answertab=scoredesc#tab-top) answer if you got:  
+> note: xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools), missing xcrun at: /Library/Developer/CommandLineTools/usr/bin/xcrun
