@@ -99,10 +99,28 @@ where
                 let mut i = 0;
                 for row in rows {
                     i += 1;
-                    rw.write_row(
-                        row?.into_iter()
-                            .map(|value| if value == "NULL" { None } else { Some(value) }), // We should probably move this out to another place
-                    )?;
+                    for (value, column) in row?.into_iter().zip(columns.clone()) {
+                        if value == "NULL" {
+                            let none: Option<String> = None;
+                            rw.write_col(none).unwrap();
+                            continue;
+                        }
+                        match column.coltype {
+                            ColumnType::MYSQL_TYPE_LONGLONG => {
+                                rw.write_col(Some(value.parse::<i64>().unwrap()))?;
+                            }
+                            ColumnType::MYSQL_TYPE_DATETIME | ColumnType::MYSQL_TYPE_DATETIME2 => {
+                                rw.write_col(Some(
+                                    NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S")
+                                        .unwrap(),
+                                ))?;
+                            }
+                            _ => {
+                                rw.write_col(Some(value))?;
+                            }
+                        };
+                    }
+                    rw.end_row()?;
                 }
                 println!("Number of rows: {}", i);
                 rw.finish()

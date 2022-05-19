@@ -409,7 +409,6 @@ fn process_expr(
                     };
                     let first = result.pop().unwrap();
                     let second = result.pop().unwrap();
-                    dbg!(first, second);
                     if first == ColumnType::MYSQL_TYPE_STRING {
                         result.push(second)
                     } else {
