@@ -115,6 +115,9 @@ where
                                         .unwrap(),
                                 ))?;
                             }
+                            ColumnType::MYSQL_TYPE_TINY => {
+                                rw.write_col(Some(value.parse::<i8>().unwrap()))?;
+                            }
                             _ => {
                                 rw.write_col(Some(value))?;
                             }
