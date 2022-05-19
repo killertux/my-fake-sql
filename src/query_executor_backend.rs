@@ -113,7 +113,8 @@ where
                             }
                             ColumnType::MYSQL_TYPE_DOUBLE
                             | ColumnType::MYSQL_TYPE_FLOAT
-                            | ColumnType::MYSQL_TYPE_DECIMAL => {
+                            | ColumnType::MYSQL_TYPE_DECIMAL
+                            | ColumnType::MYSQL_TYPE_NEWDECIMAL => {
                                 rw.write_col(Some(value.parse::<f64>().unwrap()))?;
                             }
                             ColumnType::MYSQL_TYPE_DATETIME | ColumnType::MYSQL_TYPE_DATETIME2 => {

@@ -57,7 +57,7 @@ impl<T, D> QueryDataType<T, D> {
                     "mediumint" => ColumnType::MYSQL_TYPE_LONG,
                     "text" => ColumnType::MYSQL_TYPE_STRING,
                     "enum" => ColumnType::MYSQL_TYPE_ENUM,
-                    "decimal" => ColumnType::MYSQL_TYPE_DECIMAL,
+                    "decimal" => ColumnType::MYSQL_TYPE_NEWDECIMAL,
                     "date" => ColumnType::MYSQL_TYPE_DATE,
                     "binary" => ColumnType::MYSQL_TYPE_BLOB,
                     "double" => ColumnType::MYSQL_TYPE_DOUBLE,
