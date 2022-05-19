@@ -50,7 +50,7 @@ impl<T, D> QueryDataType<T, D> {
                 row[2].clone(),
                 match row[3].as_str() {
                     "bigint" => ColumnType::MYSQL_TYPE_LONGLONG,
-                    "varchar" => ColumnType::MYSQL_TYPE_VARCHAR,
+                    "varchar" => ColumnType::MYSQL_TYPE_VAR_STRING,
                     "tinyint" => ColumnType::MYSQL_TYPE_TINY,
                     "datetime" => ColumnType::MYSQL_TYPE_DATETIME,
                     "int" => ColumnType::MYSQL_TYPE_LONG,
@@ -61,7 +61,7 @@ impl<T, D> QueryDataType<T, D> {
                     "date" => ColumnType::MYSQL_TYPE_DATE,
                     "binary" => ColumnType::MYSQL_TYPE_BLOB,
                     "double" => ColumnType::MYSQL_TYPE_DOUBLE,
-                    "char" => ColumnType::MYSQL_TYPE_VARCHAR,
+                    "char" => ColumnType::MYSQL_TYPE_STRING,
                     "tinytext" => ColumnType::MYSQL_TYPE_STRING,
                     "time" => ColumnType::MYSQL_TYPE_TIME,
                     "timestamp" => ColumnType::MYSQL_TYPE_TIMESTAMP,
