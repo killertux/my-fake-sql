@@ -111,10 +111,7 @@ where
                             | ColumnType::MYSQL_TYPE_SHORT => {
                                 rw.write_col(Some(value.parse::<i64>().unwrap()))?;
                             }
-                            ColumnType::MYSQL_TYPE_DOUBLE
-                            | ColumnType::MYSQL_TYPE_FLOAT
-                            | ColumnType::MYSQL_TYPE_DECIMAL
-                            | ColumnType::MYSQL_TYPE_NEWDECIMAL => {
+                            ColumnType::MYSQL_TYPE_DOUBLE | ColumnType::MYSQL_TYPE_FLOAT => {
                                 rw.write_col(Some(value.parse::<f64>().unwrap()))?;
                             }
                             ColumnType::MYSQL_TYPE_DATETIME | ColumnType::MYSQL_TYPE_DATETIME2 => {
@@ -125,6 +122,9 @@ where
                             }
                             ColumnType::MYSQL_TYPE_TINY => {
                                 rw.write_col(Some(value.parse::<i8>().unwrap()))?;
+                            }
+                            ColumnType::MYSQL_TYPE_DECIMAL | ColumnType::MYSQL_TYPE_NEWDECIMAL => {
+                                rw.write_col(Some(value.as_bytes()))?;
                             }
                             _ => {
                                 rw.write_col(Some(value))?;
