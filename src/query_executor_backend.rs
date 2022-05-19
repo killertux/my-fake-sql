@@ -124,6 +124,11 @@ where
                                         .unwrap(),
                                 ))?;
                             }
+                            ColumnType::MYSQL_TYPE_DATE => {
+                                rw.write_col(Some(
+                                    NaiveDate::parse_from_str(&value, "%Y-%m-%d").unwrap(),
+                                ))?;
+                            }
                             ColumnType::MYSQL_TYPE_TINY => {
                                 rw.write_col(Some(value.parse::<i8>().unwrap()))?;
                             }
