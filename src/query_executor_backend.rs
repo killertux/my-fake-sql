@@ -1,4 +1,5 @@
 use super::query_executor::{QueryExecutor, QueryResult};
+use chrono::{NaiveDate, NaiveDateTime};
 use msql_srv::Column;
 use msql_srv::*;
 use std::io::{Error, Read, Result, Write};
@@ -51,8 +52,26 @@ where
         match query {
             Some(mut query) => {
                 for param in pp.into_iter() {
-                    let value_str: &str = param.value.into();
-                    query = query.replacen("?", &format!("\'{}\'", value_str), 1);
+                    // This is a mess. msql-srv has some very bad ways of handling this types and conversions
+                    let value_str = match param.value.into_inner() {
+                        ValueInner::NULL => "NULL".to_string(),
+                        ValueInner::Bytes(bytes) => escaped(&String::from_utf8_lossy(bytes)),
+                        ValueInner::Double(value) => format!("{}", value),
+                        ValueInner::Int(value) => format!("{}", value),
+                        ValueInner::UInt(value) => format!("{}", value),
+                        ValueInner::Date(data) => {
+                            let value = Value::from_inner(ValueInner::Date(data));
+                            let date = NaiveDate::from(value);
+                            escaped(&date.to_string())
+                        }
+                        ValueInner::Datetime(data) => {
+                            let value = Value::from_inner(ValueInner::Datetime(data));
+                            let date_time = NaiveDateTime::from(value);
+                            escaped(&date_time.to_string())
+                        }
+                        ValueInner::Time(_) => panic!("Not sure how to parse this yet"),
+                    };
+                    query = query.replacen("?", &value_str, 1);
                 }
                 self.on_query(&query, results)
             }
@@ -91,4 +110,8 @@ where
             None => results.completed(0, 0),
         }
     }
+}
+
+fn escaped(value: &str) -> String {
+    format!("'{}'", value)
 }

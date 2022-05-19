@@ -796,7 +796,7 @@ dependencies = [
 [[package]]
 name = "msql-srv"
 version = "0.9.6"
-source = "git+https://github.com/killertux/msql-srv.git?branch=feature/secure-connection#0701c65c14291630301980cec422101683e5f706"
+source = "git+https://github.com/killertux/msql-srv.git?branch=feature/secure-connection#ccdd547387660c50ac684fd3c11ffc304f49e3ac"
 dependencies = [
  "byteorder",
  "chrono",
@@ -809,6 +809,7 @@ dependencies = [
 name = "my-fake-sql"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "itertools",
  "msql-srv",
  "reqwest",
