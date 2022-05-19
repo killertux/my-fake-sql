@@ -106,10 +106,14 @@ where
                             continue;
                         }
                         match column.coltype {
-                            ColumnType::MYSQL_TYPE_LONGLONG
-                            | ColumnType::MYSQL_TYPE_LONG
-                            | ColumnType::MYSQL_TYPE_SHORT => {
+                            ColumnType::MYSQL_TYPE_LONGLONG => {
                                 rw.write_col(Some(value.parse::<i64>().unwrap()))?;
+                            }
+                            ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
+                                rw.write_col(Some(value.parse::<i32>().unwrap()))?;
+                            }
+                            ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
+                                rw.write_col(Some(value.parse::<i16>().unwrap()))?;
                             }
                             ColumnType::MYSQL_TYPE_DOUBLE | ColumnType::MYSQL_TYPE_FLOAT => {
                                 rw.write_col(Some(value.parse::<f64>().unwrap()))?;
