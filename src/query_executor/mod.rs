@@ -1,5 +1,8 @@
-use msql_srv::{Column, ColumnFlags, ColumnType};
+use chrono::{NaiveDate, NaiveDateTime};
+use msql_srv::{Column, ColumnFlags, ColumnType, ToMysqlValue};
+use std::io::Write;
 use std::io::{BufRead, BufReader, Read, Result};
+use std::time::Duration;
 
 pub use query_accumulator::QueryAccumulator;
 pub use query_data_type::QueryDataType;
@@ -13,8 +16,72 @@ mod query_filter;
 mod query_sanitizer;
 mod runops;
 
-type Rows = Vec<String>;
+pub type Rows = Vec<ColumnValue>;
 type Columns = Vec<Column>;
+
+pub enum ColumnValue {
+    RawValue(String),
+    Null,
+}
+
+impl ToString for ColumnValue {
+    fn to_string(&self) -> String {
+        match self {
+            ColumnValue::Null => "NULL".to_string(),
+            ColumnValue::RawValue(value) => value.clone(),
+        }
+    }
+}
+
+impl ToMysqlValue for ColumnValue {
+    fn to_mysql_text<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        match self {
+            ColumnValue::RawValue(string) => write!(w, "{}", &string),
+            ColumnValue::Null => write!(w, "NULL"),
+        }
+    }
+    fn to_mysql_bin<W: Write>(&self, w: &mut W, c: &Column) -> std::io::Result<()> {
+        match self {
+            ColumnValue::Null => {
+                unreachable!("Should be handled by is_nul. Copied from the Option implementation")
+            }
+            ColumnValue::RawValue(value) => match c.coltype {
+                ColumnType::MYSQL_TYPE_LONGLONG => value.parse::<i64>().unwrap().to_mysql_bin(w, c),
+                ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
+                    value.parse::<i32>().unwrap().to_mysql_bin(w, c)
+                }
+                ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
+                    value.parse::<i16>().unwrap().to_mysql_bin(w, c)
+                }
+                ColumnType::MYSQL_TYPE_DOUBLE => value.parse::<f64>().unwrap().to_mysql_bin(w, c),
+                ColumnType::MYSQL_TYPE_FLOAT => value.parse::<f32>().unwrap().to_mysql_bin(w, c),
+                ColumnType::MYSQL_TYPE_DATETIME | ColumnType::MYSQL_TYPE_DATETIME2 => {
+                    NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S")
+                        .unwrap()
+                        .to_mysql_bin(w, c)
+                }
+                ColumnType::MYSQL_TYPE_DATE => NaiveDate::parse_from_str(&value, "%Y-%m-%d")
+                    .unwrap()
+                    .to_mysql_bin(w, c),
+                ColumnType::MYSQL_TYPE_TINY => value.parse::<i8>().unwrap().to_mysql_bin(w, c),
+                ColumnType::MYSQL_TYPE_DECIMAL | ColumnType::MYSQL_TYPE_NEWDECIMAL => {
+                    value.as_bytes().to_mysql_bin(w, c)
+                }
+                ColumnType::MYSQL_TYPE_TIME => {
+                    Duration::from_secs(value.parse::<u64>().unwrap()).to_mysql_bin(w, c)
+                    // Not sure if we are parsing correctly here
+                }
+                _ => value.to_mysql_bin(w, c),
+            },
+        }
+    }
+    fn is_null(&self) -> bool {
+        match self {
+            ColumnValue::Null => true,
+            _ => false,
+        }
+    }
+}
 
 pub trait QueryExecutor {
     type QueryResult;
@@ -58,7 +125,7 @@ impl ReaderQueryResult {
             .collect())
     }
 
-    fn get_rows(self) -> Box<dyn Iterator<Item = Result<Vec<String>>>> {
+    fn get_rows(self) -> Box<dyn Iterator<Item = Result<Rows>>> {
         Box::new(
             self.reader
                 .lines()
@@ -67,7 +134,14 @@ impl ReaderQueryResult {
                     Err(_) => true,
                 })
                 .map(|result_row| {
-                    result_row.map(|row| row.split('\t').map(|value| value.to_string()).collect())
+                    result_row.map(|row| {
+                        row.split('\t')
+                            .map(|value| match value {
+                                "NULL" => ColumnValue::Null,
+                                value => ColumnValue::RawValue(value.to_string()),
+                            })
+                            .collect()
+                    })
                 }),
         )
     }

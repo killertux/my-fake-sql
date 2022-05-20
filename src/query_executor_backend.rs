@@ -99,48 +99,7 @@ where
                 let mut i = 0;
                 for row in rows {
                     i += 1;
-                    for (value, column) in row?.into_iter().zip(columns.clone()) {
-                        if value == "NULL" {
-                            let none: Option<String> = None;
-                            rw.write_col(none).unwrap();
-                            continue;
-                        }
-                        match column.coltype {
-                            ColumnType::MYSQL_TYPE_LONGLONG => {
-                                rw.write_col(Some(value.parse::<i64>().unwrap()))?;
-                            }
-                            ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
-                                rw.write_col(Some(value.parse::<i32>().unwrap()))?;
-                            }
-                            ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
-                                rw.write_col(Some(value.parse::<i16>().unwrap()))?;
-                            }
-                            ColumnType::MYSQL_TYPE_DOUBLE | ColumnType::MYSQL_TYPE_FLOAT => {
-                                rw.write_col(Some(value.parse::<f64>().unwrap()))?;
-                            }
-                            ColumnType::MYSQL_TYPE_DATETIME | ColumnType::MYSQL_TYPE_DATETIME2 => {
-                                rw.write_col(Some(
-                                    NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S")
-                                        .unwrap(),
-                                ))?;
-                            }
-                            ColumnType::MYSQL_TYPE_DATE => {
-                                rw.write_col(Some(
-                                    NaiveDate::parse_from_str(&value, "%Y-%m-%d").unwrap(),
-                                ))?;
-                            }
-                            ColumnType::MYSQL_TYPE_TINY => {
-                                rw.write_col(Some(value.parse::<i8>().unwrap()))?;
-                            }
-                            ColumnType::MYSQL_TYPE_DECIMAL | ColumnType::MYSQL_TYPE_NEWDECIMAL => {
-                                rw.write_col(Some(value.as_bytes()))?;
-                            }
-                            _ => {
-                                rw.write_col(Some(value))?;
-                            }
-                        };
-                    }
-                    rw.end_row()?;
+                    rw.write_row(row?)?;
                 }
                 println!("Number of rows: {}", i);
                 rw.finish()

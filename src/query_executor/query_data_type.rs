@@ -1,4 +1,4 @@
-use super::{QueryExecutor, QueryResult};
+use super::{QueryExecutor, QueryResult, Rows};
 use msql_srv::{Column, ColumnType};
 use sqlparser::ast::{
     Expr, FunctionArg, FunctionArgExpr, SelectItem, SetExpr, Statement, TableFactor,
@@ -46,9 +46,9 @@ impl<T, D> QueryDataType<T, D> {
         for row in rows {
             let row = row?;
             type_map.push((
-                row[1].clone(), // Unecessary clones here
-                row[2].clone(),
-                match row[3].as_str() {
+                row[1].to_string(),
+                row[2].to_string(),
+                match row[3].to_string().as_str() {
                     "bigint" => ColumnType::MYSQL_TYPE_LONGLONG,
                     "varchar" => ColumnType::MYSQL_TYPE_VAR_STRING,
                     "tinyint" => ColumnType::MYSQL_TYPE_TINY,
@@ -86,7 +86,10 @@ impl<T, D> QueryDataType<T, D> {
         Ok(())
     }
 
-    fn get_columns_types_from_ast<R>(&mut self, ast: Vec<Statement>) -> Result<Vec<ColumnType>>
+    fn get_columns_types_from_ast<R>(
+        &mut self,
+        ast: Vec<Statement>,
+    ) -> Result<Vec<(ColumnName, ColumnType)>>
     where
         T: QueryExecutor<QueryResult = R>,
         R: QueryResult,
@@ -97,7 +100,10 @@ impl<T, D> QueryDataType<T, D> {
         let table_with_aliases = get_tables_with_aliases(&ast, &mut data_type_info);
         let alias_to_column_and_type =
             get_alias_with_clomuns_and_column_type(table_with_aliases, &mut data_type_info);
-        Ok(get_columns_types(&ast, alias_to_column_and_type))
+        Ok(get_columns_types(
+            get_expr(&ast).unwrap(),
+            alias_to_column_and_type,
+        ))
     }
 }
 
@@ -135,7 +141,7 @@ where
         match result {
             Some(result) => Ok(Some(ResultWithCustomColumnTypes::new(
                 result,
-                columns_types,
+                columns_types.into_iter().map(|data| data.1).collect(),
             ))),
             None => Ok(None),
         }
@@ -155,11 +161,12 @@ fn get_tables_with_aliases(
             SetExpr::Select(select) => {
                 for table_with_join in &select.from {
                     result.push(process_table_factor(
+                        &ast,
                         &table_with_join.relation,
                         data_type_info,
                     ));
                     for join in &table_with_join.joins {
-                        result.push(process_table_factor(&join.relation, data_type_info));
+                        result.push(process_table_factor(&ast, &join.relation, data_type_info));
                     }
                 }
             }
@@ -190,6 +197,7 @@ fn get_alias_with_clomuns_and_column_type(
 }
 
 fn process_table_factor(
+    ast: &Vec<Statement>,
     table_factor: &TableFactor,
     data_type_info: &mut Vec<(TableName, ColumnName, ColumnType)>,
 ) -> (String, String) {
@@ -220,24 +228,33 @@ fn process_table_factor(
             alias,
         } => {
             let mut result = Vec::new();
+            let mut temp_data_type_info = data_type_info.clone();
             match &subquery.body {
                 SetExpr::Select(select) => {
                     for table_with_join in &select.from {
                         result.push(process_table_factor(
+                            &ast,
                             &table_with_join.relation,
-                            data_type_info,
+                            &mut temp_data_type_info,
                         ));
                         for join in &table_with_join.joins {
-                            result.push(process_table_factor(&join.relation, data_type_info));
+                            result.push(process_table_factor(
+                                &ast,
+                                &join.relation,
+                                &mut temp_data_type_info,
+                            ));
                         }
                     }
                 }
                 any => todo!("We can only parse selects - {:?}", any),
             }
             let alias_to_column_and_type =
-                get_alias_with_clomuns_and_column_type(result, data_type_info);
+                get_alias_with_clomuns_and_column_type(result, &mut temp_data_type_info);
+
             let alias = alias.as_ref().unwrap().name.value.clone();
-            for (_, column_name, column_type) in alias_to_column_and_type {
+            for (column_name, column_type) in
+                get_columns_types(&subquery.body, alias_to_column_and_type)
+            {
                 data_type_info.push((alias.clone(), column_name, column_type))
             }
             (alias.clone(), alias)
@@ -246,44 +263,57 @@ fn process_table_factor(
     }
 }
 
-fn get_columns_types(
-    ast: &Vec<Statement>,
-    alias_to_column_and_type: Vec<(String, String, ColumnType)>,
-) -> Vec<ColumnType> {
+fn get_expr(ast: &Vec<Statement>) -> Option<&SetExpr> {
     if ast.len() != 1 {
         todo!("We need to be able to handle multiple statements");
     }
-    let mut result = Vec::new();
     match &ast[0] {
-        Statement::Query(query) => match &query.body {
-            SetExpr::Select(select) => {
-                for projection in &select.projection {
-                    match &projection {
-                        SelectItem::UnnamedExpr(expr)
-                        | SelectItem::ExprWithAlias { expr, alias: _ } => {
-                            process_expr(expr, &alias_to_column_and_type, &mut result)
-                        }
-                        SelectItem::QualifiedWildcard(obj_name) => {
-                            if obj_name.0.len() > 2 {
-                                todo!(
-                                    "We can only parse idents with table and column names - {:?}",
-                                    obj_name.0
-                                );
-                            }
-                            alias_to_column_and_type
-                                .iter()
-                                .filter(|(table_alias, _, _)| *table_alias == obj_name.0[0].value)
-                                .for_each(|(_, _, columnt_type)| result.push(columnt_type.clone()))
-                        }
-                        SelectItem::Wildcard => alias_to_column_and_type
-                            .iter()
-                            .for_each(|(_, _, columnt_type)| result.push(columnt_type.clone())),
+        Statement::Query(query) => Some(&query.body),
+        _ => None,
+    }
+}
+
+fn get_columns_types(
+    set_expr: &SetExpr,
+    alias_to_column_and_type: Vec<(String, String, ColumnType)>,
+) -> Vec<(ColumnName, ColumnType)> {
+    let mut result = Vec::new();
+    match set_expr {
+        SetExpr::Select(select) => {
+            for projection in &select.projection {
+                match &projection {
+                    SelectItem::UnnamedExpr(expr) => {
+                        result.push(process_expr(expr, &alias_to_column_and_type));
                     }
+                    SelectItem::ExprWithAlias { expr, alias } => {
+                        result.push((
+                            alias.value.to_string(),
+                            process_expr(expr, &alias_to_column_and_type).1,
+                        ));
+                    }
+                    SelectItem::QualifiedWildcard(obj_name) => {
+                        if obj_name.0.len() > 2 {
+                            todo!(
+                                "We can only parse idents with table and column names - {:?}",
+                                obj_name.0
+                            );
+                        }
+                        alias_to_column_and_type
+                            .iter()
+                            .filter(|(table_alias, _, _)| *table_alias == obj_name.0[0].value)
+                            .for_each(|(_, column_name, columnt_type)| {
+                                result.push((column_name.clone(), columnt_type.clone()))
+                            })
+                    }
+                    SelectItem::Wildcard => alias_to_column_and_type.iter().for_each(
+                        |(_, column_name, columnt_type)| {
+                            result.push((column_name.clone(), columnt_type.clone()))
+                        },
+                    ),
                 }
             }
-            any => todo!("We can only parse selects - {:?}", any),
-        },
-        any => todo!("We can only parse querys - {:?}", any),
+        }
+        any => todo!("We can only parse selects - {:?}", any),
     }
     result
 }
@@ -292,7 +322,7 @@ fn find_type(
     alias_to_column_and_type: &Vec<(String, String, ColumnType)>,
     column_name: &str,
     table_name: Option<&str>,
-) -> ColumnType {
+) -> (ColumnName, ColumnType) {
     match table_name {
         Some(table_name) => {
             alias_to_column_and_type
@@ -305,8 +335,8 @@ fn find_type(
             .iter()
             .find(|(_, s_column_name, _)| s_column_name == column_name),
     }
-    .map(|(_, _, column_type)| column_type.clone())
-    .unwrap_or(ColumnType::MYSQL_TYPE_STRING) // We should probably inform when this happens
+    .map(|(_, column_name, column_type)| (column_name.clone(), column_type.clone()))
+    .unwrap_or(("unknown_column".to_string(), ColumnType::MYSQL_TYPE_STRING)) // We should probably inform when this happens
 }
 
 pub struct ResultWithCustomColumnTypes<T> {
@@ -327,12 +357,7 @@ impl<T> QueryResult for ResultWithCustomColumnTypes<T>
 where
     T: QueryResult,
 {
-    fn get_data(
-        self,
-    ) -> (
-        Result<Vec<Column>>,
-        Box<dyn Iterator<Item = Result<Vec<String>>>>,
-    ) {
+    fn get_data(self) -> (Result<Vec<Column>>, Box<dyn Iterator<Item = Result<Rows>>>) {
         let (columns, rows) = self.result.get_data();
         if self.column_types.is_empty() {
             return (columns, rows);
@@ -366,12 +391,9 @@ where
 fn process_expr(
     expr: &Expr,
     alias_to_column_and_type: &Vec<(String, String, ColumnType)>,
-    result: &mut Vec<ColumnType>,
-) {
+) -> (ColumnName, ColumnType) {
     match &expr {
-        Expr::Identifier(ident) => {
-            result.push(find_type(&alias_to_column_and_type, &ident.value, None))
-        }
+        Expr::Identifier(ident) => find_type(&alias_to_column_and_type, &ident.value, None),
         Expr::CompoundIdentifier(idents) => {
             if idents.len() > 2 {
                 todo!(
@@ -379,45 +401,43 @@ fn process_expr(
                     idents
                 );
             }
-            result.push(find_type(
+            find_type(
                 &alias_to_column_and_type,
                 &idents[1].value,
                 Some(&idents[0].value),
-            ))
+            )
         }
         Expr::Function(function) => {
             let name = function.name.0[0].value.clone();
             match name.as_str() {
                 "if" => {
-                    match &function.args[1] {
+                    let first = match &function.args[1] {
                         FunctionArg::Unnamed(arg) => match arg {
                             FunctionArgExpr::Expr(expr) => {
-                                process_expr(expr, alias_to_column_and_type, result)
+                                process_expr(expr, alias_to_column_and_type)
                             }
                             _ => todo!("Cant handle wildcards here"),
                         },
                         _ => todo!("Cant handle names function arg"),
                     };
-                    match &function.args[1] {
+                    let second = match &function.args[1] {
                         FunctionArg::Unnamed(arg) => match arg {
                             FunctionArgExpr::Expr(expr) => {
-                                process_expr(expr, alias_to_column_and_type, result)
+                                process_expr(expr, alias_to_column_and_type)
                             }
                             _ => todo!("Cant handle wildcards here"),
                         },
                         _ => todo!("Cant handle names function arg"),
                     };
-                    let first = result.pop().unwrap();
-                    let second = result.pop().unwrap();
-                    if first == ColumnType::MYSQL_TYPE_STRING {
-                        result.push(second)
+                    if first.1 == ColumnType::MYSQL_TYPE_STRING {
+                        second
                     } else {
-                        result.push(first)
+                        first
                     }
                 }
-                _ => result.push(ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
+                _ => ("unknown".to_string(), ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
             }
         }
-        _ => result.push(ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
+        _ => ("unknown".to_string(), ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
     }
 }
