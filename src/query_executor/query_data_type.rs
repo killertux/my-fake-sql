@@ -186,14 +186,12 @@ fn process_table_factor(table_factor: &TableFactor) -> (String, String) {
             args: _,
             with_hints: _,
         } => {
-            let table_name = if name.0.len() == 1 {
-                name.0[0].value.clone()
-            } else {
-                todo!(
-                    "Can only parse simple table names without namespaces - {:?}",
-                    name.0
-                )
+            let table_name = match name.0.len() {
+                1 => name.0[0].value.clone(),
+                2 => format!("{}.{}", name.0[0].value, name.0[1].value),
+                _ => panic!("Could not parse table, with or without namespace")
             };
+
             let alias = match alias {
                 Some(table_alias) => table_alias.name.value.clone(),
                 None => table_name.clone(),
