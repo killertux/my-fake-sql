@@ -396,9 +396,7 @@ where
                                 ColumnType::MYSQL_TYPE_LONGLONG => {
                                     ColumnValue::I64(value.parse::<i64>().unwrap())
                                 }
-                                ColumnType::MYSQL_TYPE_LONG
-                                | ColumnType::MYSQL_TYPE_INT24
-                                | ColumnType::MYSQL_TYPE_TIMESTAMP => {
+                                ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
                                     ColumnValue::I32(value.parse::<i32>().unwrap())
                                 }
                                 ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
@@ -413,7 +411,8 @@ where
                                 ColumnType::MYSQL_TYPE_FLOAT => {
                                     ColumnValue::Float(value.parse::<f32>().unwrap())
                                 }
-                                ColumnType::MYSQL_TYPE_DATETIME
+                                ColumnType::MYSQL_TYPE_TIMESTAMP
+                                | ColumnType::MYSQL_TYPE_DATETIME
                                 | ColumnType::MYSQL_TYPE_DATETIME2 => ColumnValue::DateTime(
                                     NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S")
                                         .unwrap(),
