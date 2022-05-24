@@ -221,6 +221,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "deser-hjson"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f486ff51f3ecdf9364736375a4b358b6eb9f02555d5324fa4837c00b5aa23f5"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -810,6 +819,7 @@ name = "my-fake-sql"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "deser-hjson",
  "itertools",
  "msql-srv",
  "reqwest",

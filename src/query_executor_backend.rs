@@ -99,10 +99,7 @@ where
                 let mut i = 0;
                 for row in rows {
                     i += 1;
-                    rw.write_row(
-                        row?.into_iter()
-                            .map(|value| if value == "NULL" { None } else { Some(value) }), // We should probably move this out to another place
-                    )?;
+                    rw.write_row(row?)?;
                 }
                 println!("Number of rows: {}", i);
                 rw.finish()

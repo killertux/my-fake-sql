@@ -1,5 +1,6 @@
-use msql_srv::{Column, ColumnFlags, ColumnType};
-use std::io::{BufRead, BufReader, Read, Result};
+use chrono::{NaiveDate, NaiveDateTime};
+use msql_srv::{Column, ColumnFlags, ColumnType, ToMysqlValue};
+use std::io::{BufRead, BufReader, Read, Result, Write};
 
 pub use query_accumulator::QueryAccumulator;
 pub use query_data_type::QueryDataType;
@@ -13,8 +14,60 @@ mod query_filter;
 mod query_sanitizer;
 mod runops;
 
-type Rows = Vec<String>;
+pub type Rows = Vec<ColumnValue>;
 type Columns = Vec<Column>;
+
+pub enum ColumnValue {
+    Null,
+    String(String),
+    I64(i64),
+    I32(i32),
+    I16(i16),
+    I8(i8),
+    Double(f64),
+    Float(f32),
+    DateTime(NaiveDateTime),
+    Date(NaiveDate),
+}
+
+impl ToMysqlValue for ColumnValue {
+    fn is_null(&self) -> bool {
+        match self {
+            ColumnValue::Null => true,
+            _ => false,
+        }
+    }
+
+    fn to_mysql_text<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        match self {
+            ColumnValue::Null => w.write_all(&[0xFB]),
+            ColumnValue::String(string) => string.to_mysql_text(w),
+            ColumnValue::I64(number) => number.to_mysql_text(w),
+            ColumnValue::I32(number) => number.to_mysql_text(w),
+            ColumnValue::I16(number) => number.to_mysql_text(w),
+            ColumnValue::I8(number) => number.to_mysql_text(w),
+            ColumnValue::Double(number) => number.to_mysql_text(w),
+            ColumnValue::Float(number) => number.to_mysql_text(w),
+            ColumnValue::DateTime(date_time) => date_time.to_mysql_text(w),
+            ColumnValue::Date(date) => date.to_mysql_text(w),
+        }
+    }
+
+    fn to_mysql_bin<W: Write>(&self, w: &mut W, c: &Column) -> std::io::Result<()> {
+        match self {
+            ColumnValue::Null => unreachable!(),
+            ColumnValue::String(string) => string.to_mysql_bin(w, c),
+            ColumnValue::I64(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I32(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I16(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I8(number) => number.to_mysql_bin(w, c),
+            ColumnValue::Double(number) => number.to_mysql_bin(w, c),
+            ColumnValue::Float(number) => number.to_mysql_bin(w, c),
+            ColumnValue::DateTime(date_time) => date_time.to_mysql_bin(w, c),
+            ColumnValue::Date(date) => date.to_mysql_bin(w, c),
+        }
+    }
+}
 
 pub trait QueryExecutor {
     type QueryResult;
@@ -58,7 +111,7 @@ impl ReaderQueryResult {
             .collect())
     }
 
-    fn get_rows(self) -> Box<dyn Iterator<Item = Result<Vec<String>>>> {
+    fn get_rows(self) -> Box<dyn Iterator<Item = Result<Rows>>> {
         Box::new(
             self.reader
                 .lines()
@@ -67,7 +120,14 @@ impl ReaderQueryResult {
                     Err(_) => true,
                 })
                 .map(|result_row| {
-                    result_row.map(|row| row.split('\t').map(|value| value.to_string()).collect())
+                    result_row.map(|row| {
+                        row.split('\t')
+                            .map(|value| match value {
+                                "NULL" => ColumnValue::Null,
+                                value => ColumnValue::String(value.to_string()),
+                            })
+                            .collect()
+                    })
                 }),
         )
     }
