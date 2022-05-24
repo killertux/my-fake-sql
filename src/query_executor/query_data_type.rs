@@ -15,7 +15,7 @@ type ColumnName = String;
 pub struct QueryDataType<T, D> {
     executor: T,
     dialect: D,
-    data_type_info: Option<Vec<(TableName, ColumnName, ColumnType)>>,
+    data_type_info: Vec<(TableName, ColumnName, ColumnType)>,
 }
 
 impl<T, D> QueryDataType<T, D> {
@@ -23,7 +23,7 @@ impl<T, D> QueryDataType<T, D> {
         Self {
             executor,
             dialect,
-            data_type_info: None,
+            data_type_info: Vec::new(),
         }
     }
 
@@ -32,7 +32,7 @@ impl<T, D> QueryDataType<T, D> {
         T: QueryExecutor<QueryResult = R>,
         R: QueryResult,
     {
-        if self.data_type_info.is_some() {
+        if !self.data_type_info.is_empty() {
             return Ok(());
         }
         println!("Loading database structure");
@@ -81,7 +81,7 @@ impl<T, D> QueryDataType<T, D> {
                 },
             ));
         }
-        self.data_type_info = Some(type_map);
+        self.data_type_info = type_map;
         Ok(())
     }
 
@@ -94,18 +94,13 @@ impl<T, D> QueryDataType<T, D> {
         R: QueryResult,
     {
         self.load_data_type_hash()?;
-        match self.data_type_info.as_mut() {
-            Some(mut data_type_info) => {
-                let table_with_aliases = get_tables_with_aliases(&ast, &mut data_type_info);
-                let alias_to_column_and_type =
-                    get_alias_with_clomuns_and_column_type(table_with_aliases, &mut data_type_info);
-                Ok(get_columns_types(
-                    get_expr(&ast).unwrap(),
-                    alias_to_column_and_type,
-                ))
-            }
-            None => panic!("We failed to load the types"),
-        }
+        let table_with_aliases = get_tables_with_aliases(&ast, &mut self.data_type_info);
+        let alias_to_column_and_type =
+            get_alias_with_clomuns_and_column_type(table_with_aliases, &mut self.data_type_info);
+        Ok(get_columns_types(
+            get_expr(&ast).unwrap(),
+            alias_to_column_and_type,
+        ))
     }
 }
 
