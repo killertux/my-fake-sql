@@ -8,6 +8,7 @@ use sqlparser::dialect::Dialect;
 use sqlparser::parser::Parser;
 use std::io::Result;
 
+type Schema = String;
 type TableName = String;
 type TableAlias = String;
 type ColumnName = String;
@@ -15,7 +16,8 @@ type ColumnName = String;
 pub struct QueryDataType<T, D> {
     executor: T,
     dialect: D,
-    data_type_info: Vec<(TableName, ColumnName, ColumnType)>,
+    data_type_info: Vec<(Schema, TableName, ColumnName, ColumnType)>,
+    default_schema: Schema,
 }
 
 impl<T, D> QueryDataType<T, D> {
@@ -24,10 +26,11 @@ impl<T, D> QueryDataType<T, D> {
             executor,
             dialect,
             data_type_info: Vec::new(),
+            default_schema: String::new(),
         }
     }
 
-    fn load_data_type_hash<R>(&mut self) -> Result<()>
+    fn load_internals<R>(&mut self) -> Result<()>
     where
         T: QueryExecutor<QueryResult = R>,
         R: QueryResult,
@@ -46,6 +49,7 @@ impl<T, D> QueryDataType<T, D> {
         for row in rows {
             let row = row?;
             type_map.push((
+                to_string(&row[0]).into(),
                 to_string(&row[1]).into(),
                 to_string(&row[2]).into(),
                 match to_string(&row[3]).as_ref() {
@@ -82,6 +86,16 @@ impl<T, D> QueryDataType<T, D> {
             ));
         }
         self.data_type_info = type_map;
+        if self.default_schema.is_empty() {
+            println!("Loading current schema");
+            let (_, mut rows) = self
+                .executor
+                .query("select database();")?
+                .unwrap()
+                .get_data();
+            self.default_schema = to_string(&rows.next().unwrap()?[0]).clone();
+        }
+
         Ok(())
     }
 
@@ -93,10 +107,12 @@ impl<T, D> QueryDataType<T, D> {
         T: QueryExecutor<QueryResult = R>,
         R: QueryResult,
     {
-        self.load_data_type_hash()?;
-        let table_with_aliases = get_tables_with_aliases(&ast, &mut self.data_type_info);
+        self.load_internals()?;
+        let mut data_type_info = self.data_type_info.clone();
+        let table_with_aliases =
+            get_tables_with_aliases(&ast, &mut data_type_info, &self.default_schema);
         let alias_to_column_and_type =
-            get_alias_with_clomuns_and_column_type(table_with_aliases, &mut self.data_type_info);
+            get_alias_with_clomuns_and_column_type(table_with_aliases, &mut data_type_info);
         Ok(get_columns_types(
             get_expr(&ast).unwrap(),
             alias_to_column_and_type,
@@ -113,6 +129,18 @@ where
     type QueryResult = ResultWithCustomColumnTypes<R>;
 
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
+        if query.to_lowercase().starts_with("use") {
+            return match self.executor.query(query) {
+                Ok(option) => {
+                    self.default_schema = query.split_ascii_whitespace().skip(1).take(1).collect();
+                    match option {
+                        Some(result) => Ok(Some(ResultWithCustomColumnTypes::new(result, vec![]))),
+                        None => Ok(None),
+                    }
+                }
+                Err(error) => Err(error),
+            };
+        }
         if !query.to_lowercase().starts_with("select") {
             return match self.executor.query(query) {
                 Ok(Some(result)) => Ok(Some(ResultWithCustomColumnTypes::new(result, vec![]))),
@@ -147,8 +175,9 @@ where
 
 fn get_tables_with_aliases(
     ast: &Vec<Statement>,
-    data_type_info: &mut Vec<(TableName, ColumnName, ColumnType)>,
-) -> Vec<(TableName, TableAlias)> {
+    data_type_info: &mut Vec<(Schema, TableName, ColumnName, ColumnType)>,
+    default_schema: &str,
+) -> Vec<(Schema, TableName, TableAlias)> {
     if ast.len() != 1 {
         todo!("We need to be able to handle multiple statements");
     }
@@ -161,9 +190,15 @@ fn get_tables_with_aliases(
                         &ast,
                         &table_with_join.relation,
                         data_type_info,
+                        default_schema,
                     ));
                     for join in &table_with_join.joins {
-                        result.push(process_table_factor(&ast, &join.relation, data_type_info));
+                        result.push(process_table_factor(
+                            &ast,
+                            &join.relation,
+                            data_type_info,
+                            default_schema,
+                        ));
                     }
                 }
             }
@@ -175,18 +210,20 @@ fn get_tables_with_aliases(
 }
 
 fn get_alias_with_clomuns_and_column_type(
-    tables_with_aliases: Vec<(TableName, TableAlias)>,
-    data_type_info: &Vec<(TableName, ColumnName, ColumnType)>,
+    tables_with_aliases: Vec<(Schema, TableName, TableAlias)>,
+    data_type_info: &Vec<(Schema, TableName, ColumnName, ColumnType)>,
 ) -> Vec<(TableAlias, ColumnName, ColumnType)> {
     tables_with_aliases
         .into_iter()
-        .flat_map(|(table_name, alias_name)| {
+        .flat_map(|(schema, table_name, alias_name)| {
             data_type_info
                 .iter()
-                .filter(move |(introspected_table_name, _, _)| {
-                    *introspected_table_name == table_name
-                })
-                .map(move |(_, column_name, column_type)| {
+                .filter(
+                    move |(introspected_schema, introspected_table_name, _, _)| {
+                        *introspected_schema == schema && *introspected_table_name == table_name
+                    },
+                )
+                .map(move |(_, _, column_name, column_type)| {
                     (alias_name.clone(), column_name.clone(), column_type.clone())
                 })
         })
@@ -196,8 +233,9 @@ fn get_alias_with_clomuns_and_column_type(
 fn process_table_factor(
     ast: &Vec<Statement>,
     table_factor: &TableFactor,
-    data_type_info: &mut Vec<(TableName, ColumnName, ColumnType)>,
-) -> (String, String) {
+    data_type_info: &mut Vec<(Schema, TableName, ColumnName, ColumnType)>,
+    default_schema: &str,
+) -> (Schema, TableName, TableAlias) {
     match table_factor {
         TableFactor::Table {
             name,
@@ -205,19 +243,16 @@ fn process_table_factor(
             args: _,
             with_hints: _,
         } => {
-            let table_name = if name.0.len() == 1 {
-                name.0[0].value.clone()
-            } else {
-                todo!(
-                    "Can only parse simple table names without namespaces - {:?}",
-                    name.0
-                )
+            let (schema, table_name) = match name.0.len() {
+                1 => (default_schema.to_string(), name.0[0].value.clone()),
+                2 => (name.0[0].value.clone(), name.0[1].value.clone()),
+                _ => todo!("To many namespaces in the table name {:?}", name),
             };
             let alias = match alias {
                 Some(table_alias) => table_alias.name.value.clone(),
                 None => table_name.clone(),
             };
-            (table_name, alias)
+            (schema, table_name, alias)
         }
         TableFactor::Derived {
             lateral: _,
@@ -233,12 +268,14 @@ fn process_table_factor(
                             &ast,
                             &table_with_join.relation,
                             &mut temp_data_type_info,
+                            default_schema,
                         ));
                         for join in &table_with_join.joins {
                             result.push(process_table_factor(
                                 &ast,
                                 &join.relation,
                                 &mut temp_data_type_info,
+                                default_schema,
                             ));
                         }
                     }
@@ -252,9 +289,9 @@ fn process_table_factor(
             for (column_name, column_type) in
                 get_columns_types(&subquery.body, alias_to_column_and_type)
             {
-                data_type_info.push((alias.clone(), column_name, column_type))
+                data_type_info.push((alias.clone(), alias.clone(), column_name, column_type))
             }
-            (alias.clone(), alias)
+            (alias.clone(), alias.clone(), alias) // We should probably create unique names here.
         }
         any => todo!("We can only parse simple tables - {:?}", any),
     }
