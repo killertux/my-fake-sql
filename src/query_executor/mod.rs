@@ -17,8 +17,6 @@ mod runops;
 pub type Rows = Vec<ColumnValue>;
 type Columns = Vec<Column>;
 
-// pub type ColumnValue = Value;
-
 pub enum ColumnValue {
     Null,
     String(String),
