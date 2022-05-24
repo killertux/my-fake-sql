@@ -1,4 +1,5 @@
-use super::{QueryExecutor, QueryResult, Rows};
+use super::{ColumnValue, QueryExecutor, QueryResult, Rows};
+use chrono::{NaiveDate, NaiveDateTime};
 use msql_srv::{Column, ColumnType};
 use sqlparser::ast::{
     Expr, FunctionArg, FunctionArgExpr, SelectItem, SetExpr, Statement, TableFactor,
@@ -46,9 +47,9 @@ impl<T, D> QueryDataType<T, D> {
         for row in rows {
             let row = row?;
             type_map.push((
-                row[1].to_string(),
-                row[2].to_string(),
-                match row[3].to_string().as_str() {
+                to_string(&row[1]).into(),
+                to_string(&row[2]).into(),
+                match to_string(&row[3]).as_ref() {
                     "bigint" => ColumnType::MYSQL_TYPE_LONGLONG,
                     "varchar" => ColumnType::MYSQL_TYPE_VAR_STRING,
                     "tinyint" => ColumnType::MYSQL_TYPE_TINY,
@@ -374,16 +375,63 @@ where
                     }
                     Ok(columns
                         .into_iter()
-                        .zip(self.column_types)
+                        .zip(&self.column_types)
                         .map(|(mut column, column_type)| {
-                            column.coltype = column_type;
+                            column.coltype = *column_type;
                             column
                         })
                         .collect())
                 }
                 error => error,
             },
-            rows,
+            Box::new(rows.map(move |row| {
+                match row {
+                    Err(error) => Err(error),
+                    Ok(row) => Ok(row
+                        .into_iter()
+                        .zip(&self.column_types)
+                        .map(|(column_value, column_type)| match column_value {
+                            ColumnValue::Null => ColumnValue::Null,
+                            ColumnValue::String(value) => match column_type {
+                                ColumnType::MYSQL_TYPE_LONGLONG => {
+                                    ColumnValue::I64(value.parse::<i64>().unwrap())
+                                }
+                                ColumnType::MYSQL_TYPE_LONG
+                                | ColumnType::MYSQL_TYPE_INT24
+                                | ColumnType::MYSQL_TYPE_TIMESTAMP => {
+                                    ColumnValue::I32(value.parse::<i32>().unwrap())
+                                }
+                                ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
+                                    ColumnValue::I16(value.parse::<i16>().unwrap())
+                                }
+                                ColumnType::MYSQL_TYPE_TINY => {
+                                    ColumnValue::I8(value.parse::<i8>().unwrap())
+                                }
+                                ColumnType::MYSQL_TYPE_DOUBLE => {
+                                    ColumnValue::Double(value.parse::<f64>().unwrap())
+                                }
+                                ColumnType::MYSQL_TYPE_FLOAT => {
+                                    ColumnValue::Float(value.parse::<f32>().unwrap())
+                                }
+                                ColumnType::MYSQL_TYPE_DATETIME
+                                | ColumnType::MYSQL_TYPE_DATETIME2 => ColumnValue::DateTime(
+                                    NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S")
+                                        .unwrap(),
+                                ),
+                                ColumnType::MYSQL_TYPE_DATE => ColumnValue::Date(
+                                    NaiveDate::parse_from_str(&value, "%Y-%m-%d").unwrap(),
+                                ),
+                                ColumnType::MYSQL_TYPE_DECIMAL
+                                | ColumnType::MYSQL_TYPE_NEWDECIMAL
+                                | ColumnType::MYSQL_TYPE_STRING
+                                | ColumnType::MYSQL_TYPE_VAR_STRING
+                                | _ => ColumnValue::String(value),
+                            },
+                            _ => panic!("We should only have string format here"),
+                        })
+                        .collect()),
+                }
+            })),
         )
     }
 }
@@ -439,5 +487,12 @@ fn process_expr(
             }
         }
         _ => ("unknown".to_string(), ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
+    }
+}
+
+fn to_string(value: &ColumnValue) -> &String {
+    match value {
+        ColumnValue::String(string) => string,
+        _ => panic!("We are expecting bytes here"),
     }
 }

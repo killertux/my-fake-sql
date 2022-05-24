@@ -1,8 +1,6 @@
 use chrono::{NaiveDate, NaiveDateTime};
 use msql_srv::{Column, ColumnFlags, ColumnType, ToMysqlValue};
-use std::io::Write;
-use std::io::{BufRead, BufReader, Read, Result};
-use std::time::Duration;
+use std::io::{BufRead, BufReader, Read, Result, Write};
 
 pub use query_accumulator::QueryAccumulator;
 pub use query_data_type::QueryDataType;
@@ -19,66 +17,56 @@ mod runops;
 pub type Rows = Vec<ColumnValue>;
 type Columns = Vec<Column>;
 
-pub enum ColumnValue {
-    RawValue(String),
-    Null,
-}
+// pub type ColumnValue = Value;
 
-impl ToString for ColumnValue {
-    fn to_string(&self) -> String {
-        match self {
-            ColumnValue::Null => "NULL".to_string(),
-            ColumnValue::RawValue(value) => value.clone(),
-        }
-    }
+pub enum ColumnValue {
+    Null,
+    String(String),
+    I64(i64),
+    I32(i32),
+    I16(i16),
+    I8(i8),
+    Double(f64),
+    Float(f32),
+    DateTime(NaiveDateTime),
+    Date(NaiveDate),
 }
 
 impl ToMysqlValue for ColumnValue {
-    fn to_mysql_text<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        match self {
-            ColumnValue::RawValue(string) => write!(w, "{}", &string),
-            ColumnValue::Null => write!(w, "NULL"),
-        }
-    }
-    fn to_mysql_bin<W: Write>(&self, w: &mut W, c: &Column) -> std::io::Result<()> {
-        match self {
-            ColumnValue::Null => {
-                unreachable!("Should be handled by is_nul. Copied from the Option implementation")
-            }
-            ColumnValue::RawValue(value) => match c.coltype {
-                ColumnType::MYSQL_TYPE_LONGLONG => value.parse::<i64>().unwrap().to_mysql_bin(w, c),
-                ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
-                    value.parse::<i32>().unwrap().to_mysql_bin(w, c)
-                }
-                ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
-                    value.parse::<i16>().unwrap().to_mysql_bin(w, c)
-                }
-                ColumnType::MYSQL_TYPE_DOUBLE => value.parse::<f64>().unwrap().to_mysql_bin(w, c),
-                ColumnType::MYSQL_TYPE_FLOAT => value.parse::<f32>().unwrap().to_mysql_bin(w, c),
-                ColumnType::MYSQL_TYPE_DATETIME | ColumnType::MYSQL_TYPE_DATETIME2 => {
-                    NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S")
-                        .unwrap()
-                        .to_mysql_bin(w, c)
-                }
-                ColumnType::MYSQL_TYPE_DATE => NaiveDate::parse_from_str(&value, "%Y-%m-%d")
-                    .unwrap()
-                    .to_mysql_bin(w, c),
-                ColumnType::MYSQL_TYPE_TINY => value.parse::<i8>().unwrap().to_mysql_bin(w, c),
-                ColumnType::MYSQL_TYPE_DECIMAL | ColumnType::MYSQL_TYPE_NEWDECIMAL => {
-                    value.as_bytes().to_mysql_bin(w, c)
-                }
-                ColumnType::MYSQL_TYPE_TIME => {
-                    Duration::from_secs(value.parse::<u64>().unwrap()).to_mysql_bin(w, c)
-                    // Not sure if we are parsing correctly here
-                }
-                _ => value.to_mysql_bin(w, c),
-            },
-        }
-    }
     fn is_null(&self) -> bool {
         match self {
             ColumnValue::Null => true,
             _ => false,
+        }
+    }
+
+    fn to_mysql_text<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        match self {
+            ColumnValue::Null => w.write_all(&[0xFB]),
+            ColumnValue::String(string) => string.to_mysql_text(w),
+            ColumnValue::I64(number) => number.to_mysql_text(w),
+            ColumnValue::I32(number) => number.to_mysql_text(w),
+            ColumnValue::I16(number) => number.to_mysql_text(w),
+            ColumnValue::I8(number) => number.to_mysql_text(w),
+            ColumnValue::Double(number) => number.to_mysql_text(w),
+            ColumnValue::Float(number) => number.to_mysql_text(w),
+            ColumnValue::DateTime(date_time) => date_time.to_mysql_text(w),
+            ColumnValue::Date(date) => date.to_mysql_text(w),
+        }
+    }
+
+    fn to_mysql_bin<W: Write>(&self, w: &mut W, c: &Column) -> std::io::Result<()> {
+        match self {
+            ColumnValue::Null => unreachable!(),
+            ColumnValue::String(string) => string.to_mysql_bin(w, c),
+            ColumnValue::I64(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I32(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I16(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I8(number) => number.to_mysql_bin(w, c),
+            ColumnValue::Double(number) => number.to_mysql_bin(w, c),
+            ColumnValue::Float(number) => number.to_mysql_bin(w, c),
+            ColumnValue::DateTime(date_time) => date_time.to_mysql_bin(w, c),
+            ColumnValue::Date(date) => date.to_mysql_bin(w, c),
         }
     }
 }
@@ -138,7 +126,7 @@ impl ReaderQueryResult {
                         row.split('\t')
                             .map(|value| match value {
                                 "NULL" => ColumnValue::Null,
-                                value => ColumnValue::RawValue(value.to_string()),
+                                value => ColumnValue::String(value.to_string()),
                             })
                             .collect()
                     })
