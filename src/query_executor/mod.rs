@@ -6,7 +6,7 @@ pub use query_accumulator::QueryAccumulator;
 pub use query_data_type::QueryDataType;
 pub use query_filter::QueryFilter;
 pub use query_sanitizer::QuerySanitizer;
-pub use runops::Runops;
+pub use runops::RunopsApi;
 
 mod query_accumulator;
 mod query_data_type;

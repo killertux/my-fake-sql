@@ -104,7 +104,7 @@ where
                 println!("Number of rows: {}", i);
                 rw.finish()
             }
-            None => results.completed(0, 0),
+            None => results.start(&[])?.finish(),
         }
     }
 }

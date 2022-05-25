@@ -1,5 +1,5 @@
 use msql_srv::*;
-use query_executor::{QueryAccumulator, QueryDataType, QueryFilter, QuerySanitizer, Runops};
+use query_executor::{QueryAccumulator, QueryDataType, QueryFilter, QuerySanitizer, RunopsApi};
 use query_executor_backend::Backend;
 use serde::Deserialize;
 use sqlparser::dialect::MySqlDialect;
@@ -45,7 +45,9 @@ fn spawn_sql_processor(config: &YamlTargetConfig, s: std::net::TcpStream) {
         if let Some(true) = with_type_discovery {
             MysqlIntermediary::run_on_tcp(
                 Backend::new(QuerySanitizer::new(QueryFilter::new(QueryDataType::new(
-                    QueryAccumulator::new(Runops::new(target)),
+                    QueryAccumulator::new(
+                        RunopsApi::new(target).expect("Error creating runops client"),
+                    ),
                     MySqlDialect {},
                 )))),
                 s,
@@ -54,7 +56,9 @@ fn spawn_sql_processor(config: &YamlTargetConfig, s: std::net::TcpStream) {
         } else {
             MysqlIntermediary::run_on_tcp(
                 Backend::new(QuerySanitizer::new(QueryFilter::new(
-                    QueryAccumulator::new(Runops::new(target)),
+                    QueryAccumulator::new(
+                        RunopsApi::new(target).expect("Error creating runops client"),
+                    ),
                 ))),
                 s,
             )
