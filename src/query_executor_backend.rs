@@ -50,7 +50,7 @@ impl<T> Backend<T> {
                 Some(sql_error) => {
                     println!("Sql Error: {sql_error}");
                     Ok(results.error(
-                        ErrorKind::ER_ERROR_ON_READ,
+                        ErrorKind::ER_ERROR_ON_READ, // Using this as a generic error. Doing a mapping here would be too difficult
                         sql_error.to_string().as_bytes(),
                     )?)
                 }
