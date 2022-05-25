@@ -1,6 +1,6 @@
 use super::{ColumnValue, QueryExecutor, QueryResult, Rows};
 use chrono::{NaiveDate, NaiveDateTime};
-use msql_srv::{Column, ColumnType};
+use msql_srv::{Column, ColumnFlags, ColumnType};
 use sqlparser::ast::{
     Expr, FunctionArg, FunctionArgExpr, SelectItem, SetExpr, Statement, TableFactor,
 };
@@ -134,7 +134,9 @@ where
                 Ok(option) => {
                     self.default_schema = query.split_ascii_whitespace().skip(1).take(1).collect();
                     match option {
-                        Some(result) => Ok(Some(ResultWithCustomColumnTypes::new(result, vec![]))),
+                        Some(result) => {
+                            Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))
+                        }
                         None => Ok(None),
                     }
                 }
@@ -143,7 +145,9 @@ where
         }
         if !query.to_lowercase().starts_with("select") {
             return match self.executor.query(query) {
-                Ok(Some(result)) => Ok(Some(ResultWithCustomColumnTypes::new(result, vec![]))),
+                Ok(Some(result)) => {
+                    Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))
+                }
                 Ok(None) => Ok(None),
                 Err(error) => Err(error),
             };
@@ -155,7 +159,9 @@ where
         if ast.is_err() {
             println!("Failed to parse SQL. Result will not have types. {:?}", ast);
             return match self.executor.query(query) {
-                Ok(Some(result)) => Ok(Some(ResultWithCustomColumnTypes::new(result, vec![]))),
+                Ok(Some(result)) => {
+                    Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))
+                }
                 Ok(None) => Ok(None),
                 Err(error) => Err(error),
             };
@@ -163,13 +169,10 @@ where
         let columns_types = self.get_columns_types_from_ast(ast.unwrap())?;
         println!("Expected column types : {:?}", columns_types);
         let result = self.executor.query(query)?;
-        match result {
-            Some(result) => Ok(Some(ResultWithCustomColumnTypes::new(
-                result,
-                columns_types.into_iter().map(|data| data.1).collect(),
-            ))),
-            None => Ok(None),
-        }
+        Ok(Some(ResultWithCustomColumnTypes::new(
+            result,
+            columns_types,
+        )))
     }
 }
 
@@ -374,12 +377,12 @@ fn find_type(
 }
 
 pub struct ResultWithCustomColumnTypes<T> {
-    result: T,
-    column_types: Vec<ColumnType>,
+    result: Option<T>,
+    column_types: Vec<(ColumnName, ColumnType)>,
 }
 
 impl<T> ResultWithCustomColumnTypes<T> {
-    fn new(result: T, column_types: Vec<ColumnType>) -> Self {
+    fn new(result: Option<T>, column_types: Vec<(ColumnName, ColumnType)>) -> Self {
         Self {
             result,
             column_types,
@@ -392,79 +395,103 @@ where
     T: QueryResult,
 {
     fn get_data(self) -> (Result<Vec<Column>>, Box<dyn Iterator<Item = Result<Rows>>>) {
-        let (columns, rows) = self.result.get_data();
-        if self.column_types.is_empty() {
-            return (columns, rows);
+        match self.result {
+            Some(result) => {
+                let (columns, rows) = result.get_data();
+                if self.column_types.is_empty() {
+                    return (columns, rows);
+                }
+                (
+                    match columns {
+                        Ok(columns) => {
+                            if columns.len() != self.column_types.len() {
+                                panic!(
+                                    "Wrong number of columns in result. Expected {}, found {}",
+                                    self.column_types.len(),
+                                    columns.len()
+                                )
+                            }
+                            Ok(columns
+                                .into_iter()
+                                .zip(&self.column_types)
+                                .map(|(mut column, column_type)| {
+                                    column.coltype = column_type.1;
+                                    column
+                                })
+                                .collect())
+                        }
+                        error => error,
+                    },
+                    Box::new(rows.map(move |row| {
+                        match row {
+                            Err(error) => Err(error),
+                            Ok(row) => Ok(row
+                                .into_iter()
+                                .zip(&self.column_types)
+                                .map(|(column_value, column_type)| match column_value {
+                                    ColumnValue::Null => ColumnValue::Null,
+                                    ColumnValue::String(value) => match column_type.1 {
+                                        ColumnType::MYSQL_TYPE_LONGLONG => {
+                                            ColumnValue::I64(value.parse::<i64>().unwrap())
+                                        }
+                                        ColumnType::MYSQL_TYPE_LONG
+                                        | ColumnType::MYSQL_TYPE_INT24 => {
+                                            ColumnValue::I32(value.parse::<i32>().unwrap())
+                                        }
+                                        ColumnType::MYSQL_TYPE_SHORT
+                                        | ColumnType::MYSQL_TYPE_YEAR => {
+                                            ColumnValue::I16(value.parse::<i16>().unwrap())
+                                        }
+                                        ColumnType::MYSQL_TYPE_TINY => {
+                                            ColumnValue::I8(value.parse::<i8>().unwrap())
+                                        }
+                                        ColumnType::MYSQL_TYPE_DOUBLE => {
+                                            ColumnValue::Double(value.parse::<f64>().unwrap())
+                                        }
+                                        ColumnType::MYSQL_TYPE_FLOAT => {
+                                            ColumnValue::Float(value.parse::<f32>().unwrap())
+                                        }
+                                        ColumnType::MYSQL_TYPE_TIMESTAMP
+                                        | ColumnType::MYSQL_TYPE_DATETIME
+                                        | ColumnType::MYSQL_TYPE_DATETIME2 => {
+                                            ColumnValue::DateTime(
+                                                NaiveDateTime::parse_from_str(
+                                                    &value,
+                                                    "%Y-%m-%d %H:%M:%S",
+                                                )
+                                                .unwrap(),
+                                            )
+                                        }
+                                        ColumnType::MYSQL_TYPE_DATE => ColumnValue::Date(
+                                            NaiveDate::parse_from_str(&value, "%Y-%m-%d").unwrap(),
+                                        ),
+                                        ColumnType::MYSQL_TYPE_DECIMAL
+                                        | ColumnType::MYSQL_TYPE_NEWDECIMAL
+                                        | ColumnType::MYSQL_TYPE_STRING
+                                        | ColumnType::MYSQL_TYPE_VAR_STRING
+                                        | _ => ColumnValue::String(value),
+                                    },
+                                    _ => panic!("We should only have string format here"),
+                                })
+                                .collect()),
+                        }
+                    })),
+                )
+            }
+            None => (
+                Ok(self
+                    .column_types
+                    .into_iter()
+                    .map(|(column_name, column_type)| Column {
+                        table: "none".to_string(),
+                        column: column_name,
+                        coltype: column_type,
+                        colflags: ColumnFlags::empty(),
+                    })
+                    .collect()),
+                Box::new(std::iter::empty()),
+            ),
         }
-        (
-            match columns {
-                Ok(columns) => {
-                    if columns.len() != self.column_types.len() {
-                        panic!(
-                            "Wrong number of columns in result. Expected {}, found {}",
-                            self.column_types.len(),
-                            columns.len()
-                        )
-                    }
-                    Ok(columns
-                        .into_iter()
-                        .zip(&self.column_types)
-                        .map(|(mut column, column_type)| {
-                            column.coltype = *column_type;
-                            column
-                        })
-                        .collect())
-                }
-                error => error,
-            },
-            Box::new(rows.map(move |row| {
-                match row {
-                    Err(error) => Err(error),
-                    Ok(row) => Ok(row
-                        .into_iter()
-                        .zip(&self.column_types)
-                        .map(|(column_value, column_type)| match column_value {
-                            ColumnValue::Null => ColumnValue::Null,
-                            ColumnValue::String(value) => match column_type {
-                                ColumnType::MYSQL_TYPE_LONGLONG => {
-                                    ColumnValue::I64(value.parse::<i64>().unwrap())
-                                }
-                                ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
-                                    ColumnValue::I32(value.parse::<i32>().unwrap())
-                                }
-                                ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
-                                    ColumnValue::I16(value.parse::<i16>().unwrap())
-                                }
-                                ColumnType::MYSQL_TYPE_TINY => {
-                                    ColumnValue::I8(value.parse::<i8>().unwrap())
-                                }
-                                ColumnType::MYSQL_TYPE_DOUBLE => {
-                                    ColumnValue::Double(value.parse::<f64>().unwrap())
-                                }
-                                ColumnType::MYSQL_TYPE_FLOAT => {
-                                    ColumnValue::Float(value.parse::<f32>().unwrap())
-                                }
-                                ColumnType::MYSQL_TYPE_TIMESTAMP
-                                | ColumnType::MYSQL_TYPE_DATETIME
-                                | ColumnType::MYSQL_TYPE_DATETIME2 => ColumnValue::DateTime(
-                                    NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S")
-                                        .unwrap(),
-                                ),
-                                ColumnType::MYSQL_TYPE_DATE => ColumnValue::Date(
-                                    NaiveDate::parse_from_str(&value, "%Y-%m-%d").unwrap(),
-                                ),
-                                ColumnType::MYSQL_TYPE_DECIMAL
-                                | ColumnType::MYSQL_TYPE_NEWDECIMAL
-                                | ColumnType::MYSQL_TYPE_STRING
-                                | ColumnType::MYSQL_TYPE_VAR_STRING
-                                | _ => ColumnValue::String(value),
-                            },
-                            _ => panic!("We should only have string format here"),
-                        })
-                        .collect()),
-                }
-            })),
-        )
     }
 }
 
@@ -515,7 +542,7 @@ fn process_expr(
                         first
                     }
                 }
-                _ => ("unknown".to_string(), ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
+                _ => (name, ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
             }
         }
         _ => ("unknown".to_string(), ColumnType::MYSQL_TYPE_STRING), // We should probably warn this cases
