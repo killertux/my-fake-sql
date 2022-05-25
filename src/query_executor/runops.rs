@@ -36,6 +36,7 @@ impl RunopsApi {
             target,
             client: ClientBuilder::new()
                 .default_headers(headers)
+                .timeout(Duration::from_secs(120))
                 .build()
                 .expect("Error creating client"),
         })
