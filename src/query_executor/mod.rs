@@ -1,12 +1,13 @@
+use anyhow::Result;
 use chrono::{NaiveDate, NaiveDateTime};
 use msql_srv::{Column, ColumnFlags, ColumnType, ToMysqlValue};
-use std::io::{BufRead, BufReader, Read, Result, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 
 pub use query_accumulator::QueryAccumulator;
 pub use query_data_type::QueryDataType;
 pub use query_filter::QueryFilter;
 pub use query_sanitizer::QuerySanitizer;
-pub use runops::RunopsApi;
+pub use runops::{RunopsApi, SqlError};
 
 mod query_accumulator;
 mod query_data_type;
@@ -120,14 +121,16 @@ impl ReaderQueryResult {
                     Err(_) => true,
                 })
                 .map(|result_row| {
-                    result_row.map(|row| {
-                        row.split('\t')
-                            .map(|value| match value {
-                                "NULL" => ColumnValue::Null,
-                                value => ColumnValue::String(value.to_string()),
-                            })
-                            .collect()
-                    })
+                    result_row
+                        .map(|row| {
+                            row.split('\t')
+                                .map(|value| match value {
+                                    "NULL" => ColumnValue::Null,
+                                    value => ColumnValue::String(value.to_string()),
+                                })
+                                .collect()
+                        })
+                        .map_err(|io_error| io_error.into())
                 }),
         )
     }
@@ -136,7 +139,6 @@ impl ReaderQueryResult {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::io::Result;
     use std::rc::Rc;
 
     pub struct FakeQueryExecutor {
