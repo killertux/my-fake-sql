@@ -19,7 +19,7 @@ struct YamlTargetConfig {
     port: u16,
     target: String,
     with_type_discovery: Option<bool>,
-    query_cache: Option<String>,
+    query_cache: Option<Vec<String>>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -38,9 +38,15 @@ fn tcp_listener(config: YamlTargetConfig) -> std::io::Result<()> {
         .expect(&format!("Error binding to port {}", config.port));
     let queries_connection_cache: HashSet<String> = match &config.query_cache {
         None => HashSet::new(),
-        Some(path) => std::fs::read_to_string(path)?
-            .split("|\n")
-            .map(|query| query.to_string())
+        Some(paths) => paths
+            .iter()
+            .flat_map(|path| {
+                std::fs::read_to_string(path)
+                    .expect("")
+                    .split("|\n")
+                    .map(|query| query.to_string())
+                    .collect::<Vec<String>>()
+            })
             .collect(),
     };
 
