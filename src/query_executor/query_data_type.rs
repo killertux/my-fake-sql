@@ -1,4 +1,4 @@
-use super::{ColumnValue, QueryExecutor, QueryResult, Rows};
+use super::{ColumnValue, QueryExecutor, QueryResult, Row};
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, NaiveDateTime};
 use msql_srv::{Column, ColumnFlags, ColumnType};
@@ -426,7 +426,7 @@ impl<T> QueryResult for ResultWithCustomColumnTypes<T>
 where
     T: QueryResult,
 {
-    fn get_data(self) -> (Result<Vec<Column>>, Box<dyn Iterator<Item = Result<Rows>>>) {
+    fn get_data(self) -> (Result<Vec<Column>>, Box<dyn Iterator<Item = Result<Row>>>) {
         match self.result {
             Some(result) => {
                 let (columns, rows) = result.get_data();
