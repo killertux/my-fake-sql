@@ -1,6 +1,6 @@
 use super::QueryExecutor;
+use anyhow::Result;
 use itertools::Itertools;
-use std::io::Result;
 
 pub struct QuerySanitizer<T>(T);
 
@@ -21,6 +21,7 @@ where
             query = remove_comments_from_the_start(query);
         }
         query = query
+            .trim()
             .lines()
             .filter(|line| !line.trim().starts_with("--"))
             .filter(|line| !line.trim().starts_with("#"))
@@ -38,7 +39,5 @@ fn remove_comments_from_the_start(query: String) -> String {
         .skip_while(|(prev, next)| !(*prev == '*' && *next == '/'))
         .skip(1)
         .map(|(_, next)| next)
-        .collect::<String>()
-        .trim()
-        .to_string()
+        .collect()
 }

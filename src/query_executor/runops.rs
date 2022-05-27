@@ -1,13 +1,15 @@
 use super::{QueryExecutor, ReaderQueryResult};
+use anyhow::{anyhow, Result};
 use reqwest::{
     blocking::{get, Client, ClientBuilder},
     header::HeaderMap,
     StatusCode,
 };
 use serde::{Deserialize, Serialize};
-use std::io::{Cursor, Result};
+use std::io::Cursor;
 use std::thread::sleep;
 use std::time::Duration;
+use thiserror::Error;
 
 #[derive(Deserialize)]
 struct LogsResult {
@@ -28,17 +30,15 @@ impl RunopsApi {
                 "{}/.runops/config",
                 dirs::home_dir().unwrap().to_string_lossy()
             ))?
-            .parse()
-            .unwrap(),
+            .parse()?,
         );
-        headers.insert("Accept", "application/json".parse().unwrap());
+        headers.insert("Accept", "application/json".parse()?);
         Ok(Self {
             target,
             client: ClientBuilder::new()
                 .default_headers(headers)
                 .timeout(Duration::from_secs(120))
-                .build()
-                .expect("Error creating client"),
+                .build()?,
         })
     }
 }
@@ -69,16 +69,20 @@ impl QueryExecutor for RunopsApi {
             .client
             .post("https://api.runops.io/v1/tasks")
             .json(&RunopsTaskRequest::new(&self.target, query))
-            .send()
-            .expect("Error getting data from URL")
-            .json()
-            .expect("Error desserializing object");
+            .send()?
+            .json()?;
         if result.task_logs.starts_with("https://") {
-            let body = get(result.task_logs).expect("Error getting data from URL");
+            let body = get(result.task_logs)?;
             return Ok(Some(ReaderQueryResult::new(body)));
         }
         if result.task_logs == "Task returned empty logs" {
             return Ok(None);
+        }
+        if result.task_logs.starts_with("ERROR") {
+            return Err(SqlError {
+                error: result.task_logs,
+            }
+            .into());
         }
         if result.task_logs.starts_with("Your task is running.") {
             println!(
@@ -90,20 +94,31 @@ impl QueryExecutor for RunopsApi {
                 let response = self
                     .client
                     .get(format!("https://api.runops.io/v1/tasks/{}/logs", result.id))
-                    .send()
-                    .expect("Error getting data from URL");
+                    .send()?;
                 match response.status() {
                     StatusCode::BAD_REQUEST => continue,
                     StatusCode::OK => {
-                        let result: LogsResult =
-                            response.json().expect("Error desserializing object");
-                        let body = get(result.logs_url).expect("Error getting data from URL");
+                        let result: LogsResult = response.json()?;
+                        let body = get(result.logs_url)?;
                         return Ok(Some(ReaderQueryResult::new(body)));
                     }
-                    another_status => panic!("Unexpected status {another_status}"),
+                    another_status => {
+                        return Err(anyhow!("Invalid status code from Runops {another_status}"))
+                    }
                 }
             }
         }
         Ok(Some(ReaderQueryResult::new(Cursor::new(result.task_logs))))
+    }
+}
+
+#[derive(Error, Debug)]
+pub struct SqlError {
+    error: String,
+}
+
+impl std::fmt::Display for SqlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{}", self.error)
     }
 }

@@ -1,8 +1,9 @@
-use super::query_executor::{QueryExecutor, QueryResult};
+use super::query_executor::{QueryExecutor, QueryResult, SqlError};
+use anyhow::{bail, Result};
 use chrono::{NaiveDate, NaiveDateTime};
 use msql_srv::Column;
 use msql_srv::*;
-use std::io::{Error, Read, Result, Write};
+use std::io::{Error, Read, Write};
 
 pub struct Backend<T> {
     executor: T,
@@ -16,6 +17,47 @@ impl<T> Backend<T> {
             prepared_statements: Vec::new(),
         }
     }
+
+    fn do_query<W: Write + Read, R>(
+        &mut self,
+        query: &str,
+        results: QueryResultWriter<W>,
+    ) -> Result<()>
+    where
+        T: QueryExecutor<QueryResult = R>,
+        R: QueryResult,
+    {
+        println!("Query {}", query);
+        let result = self.executor.query(query);
+        match result {
+            Ok(Some(query_result)) => {
+                let (columns, rows) = query_result.get_data();
+                let columns = columns?;
+                if columns.is_empty() {
+                    return Ok(results.completed(0, 0)?);
+                }
+                let mut rw = results.start(&columns)?;
+                let mut i = 0;
+                for row in rows {
+                    i += 1;
+                    rw.write_row(row?)?;
+                }
+                println!("Number of rows: {}", i);
+                Ok(rw.finish()?)
+            }
+            Ok(None) => Ok(results.start(&[])?.finish()?),
+            Err(error) => match error.downcast_ref::<SqlError>() {
+                Some(sql_error) => {
+                    println!("Sql Error: {sql_error}");
+                    Ok(results.error(
+                        ErrorKind::ER_ERROR_ON_READ, // Using this as a generic error. Doing a mapping here would be too difficult
+                        sql_error.to_string().as_bytes(),
+                    )?)
+                }
+                None => bail!("{error}"),
+            },
+        }
+    }
 }
 
 impl<W: Write + Read, T, R> MysqlShim<W> for Backend<T>
@@ -25,7 +67,7 @@ where
 {
     type Error = Error;
 
-    fn on_prepare(&mut self, query: &str, info: StatementMetaWriter<W>) -> Result<()> {
+    fn on_prepare(&mut self, query: &str, info: StatementMetaWriter<W>) -> std::io::Result<()> {
         self.prepared_statements.push(query.to_string());
         let params: Vec<Column> = query
             .chars()
@@ -44,7 +86,7 @@ where
         statement_id: u32,
         pp: ParamParser,
         results: QueryResultWriter<W>,
-    ) -> Result<()> {
+    ) -> std::io::Result<()> {
         let query = self
             .prepared_statements
             .get(statement_id as usize)
@@ -85,27 +127,8 @@ where
         self.prepared_statements.remove(statement_id as usize);
     }
 
-    fn on_query(&mut self, query: &str, results: QueryResultWriter<W>) -> Result<()> {
-        println!("Query {}", query);
-        let result = self.executor.query(query)?;
-        match result {
-            Some(query_result) => {
-                let (columns, rows) = query_result.get_data();
-                let columns = columns?;
-                if columns.is_empty() {
-                    return results.completed(0, 0);
-                }
-                let mut rw = results.start(&columns)?;
-                let mut i = 0;
-                for row in rows {
-                    i += 1;
-                    rw.write_row(row?)?;
-                }
-                println!("Number of rows: {}", i);
-                rw.finish()
-            }
-            None => results.start(&[])?.finish(),
-        }
+    fn on_query(&mut self, query: &str, results: QueryResultWriter<W>) -> std::io::Result<()> {
+        Ok(self.do_query(query, results).unwrap())
     }
 }
 

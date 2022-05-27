@@ -1,5 +1,5 @@
 use super::QueryExecutor;
-use std::io::Result;
+use anyhow::Result;
 
 pub struct QueryFilter<T>(T);
 

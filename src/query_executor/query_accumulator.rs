@@ -1,7 +1,7 @@
 use super::QueryExecutor;
+use anyhow::Result;
 use itertools::Itertools;
 use ritelinked::LinkedHashSet;
-use std::io::Result;
 
 pub struct QueryAccumulator<T> {
     executor: T,
@@ -23,7 +23,7 @@ where
 {
     type QueryResult = T::QueryResult;
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
-        if query.starts_with("SET") {
+        if query.to_lowercase().starts_with("set") {
             self.acc.insert(query.to_string());
             return Ok(None);
         }
