@@ -1,7 +1,7 @@
 use msql_srv::*;
 use query_executor::{
-    InMemoryQueryStorage, QueryAccumulator, QueryCache, QueryDataType, QueryFilter, QuerySanitizer,
-    RunopsApi,
+    DataTypeInfo, InMemoryQueryStorage, QueryAccumulator, QueryCache, QueryDataType, QueryFilter,
+    QuerySanitizer, RunopsApi,
 };
 use query_executor_backend::Backend;
 use serde::Deserialize;
@@ -51,12 +51,14 @@ fn tcp_listener(config: YamlTargetConfig) -> std::io::Result<()> {
     };
 
     let query_storage = InMemoryQueryStorage::new();
+    let mut data_type_info = None;
     while let Ok((s, _)) = listener.accept() {
         spawn_sql_processor(
             &config,
             s,
             queries_connection_cache.clone(),
             query_storage.clone(),
+            &mut data_type_info,
         )
     }
     Ok(())
@@ -67,38 +69,47 @@ fn spawn_sql_processor(
     s: TcpStream,
     queries_connection_cache: HashSet<String>,
     storage: InMemoryQueryStorage,
+    data_type_info: &mut Option<DataTypeInfo>,
 ) {
     let target = config.target.clone();
     let with_type_discovery = config.with_type_discovery.clone();
 
-    thread::spawn(move || {
-        if let Some(true) = with_type_discovery {
+    if let Some(true) = with_type_discovery {
+        let mut runops_api = RunopsApi::new(target).expect("Error creating runops client");
+        *data_type_info = data_type_info
+            .take()
+            .or_else(|| Some(DataTypeInfo::load(&mut runops_api).expect("Error loading datatype")));
+        let data_type_info_clone = data_type_info.clone().unwrap();
+        thread::spawn(move || {
             MysqlIntermediary::run_on_tcp(
                 Backend::new(QueryCache::new(
                     QuerySanitizer::new(QueryFilter::new(QueryDataType::new(
-                        QueryAccumulator::new(
-                            RunopsApi::new(target).expect("Error creating runops client"),
-                        ),
+                        QueryAccumulator::new(runops_api),
                         MySqlDialect {},
+                        data_type_info_clone,
                     ))),
                     storage,
                     queries_connection_cache,
                 )),
                 s,
             )
-            .unwrap();
-        } else {
+            .unwrap()
+        });
+    } else {
+        thread::spawn(move || {
             MysqlIntermediary::run_on_tcp(
                 Backend::new(QueryCache::new(
                     QuerySanitizer::new(QueryFilter::new(QueryAccumulator::new(
                         RunopsApi::new(target).expect("Error creating runops client"),
                     ))),
-                    InMemoryQueryStorage::new(),
+                    storage,
                     queries_connection_cache,
                 )),
                 s,
             )
-            .unwrap();
-        }
-    });
+            .unwrap()
+        });
+    }
+
+    thread::spawn(move || {});
 }

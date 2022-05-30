@@ -7,40 +7,38 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::Dialect;
 use sqlparser::parser::Parser;
+use std::ops::{Deref, DerefMut};
 
 type Schema = String;
 type TableName = String;
 type TableAlias = String;
 type ColumnName = String;
 
-pub struct QueryDataType<T, D> {
-    executor: T,
-    dialect: D,
-    data_type_info: Vec<(Schema, TableName, ColumnName, ColumnType)>,
-    default_schema: Schema,
+#[derive(Clone, Debug)]
+pub struct DataTypeInfo(Vec<(Schema, TableName, ColumnName, ColumnType)>);
+
+impl Deref for DataTypeInfo {
+    type Target = Vec<(Schema, TableName, ColumnName, ColumnType)>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-impl<T, D> QueryDataType<T, D> {
-    pub fn new(executor: T, dialect: D) -> Self {
-        Self {
-            executor,
-            dialect,
-            data_type_info: Vec::new(),
-            default_schema: String::new(),
-        }
+impl DerefMut for DataTypeInfo {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
+}
 
-    fn load_internals<R>(&mut self) -> Result<()>
+impl DataTypeInfo {
+    pub fn load<T, R>(executor: &mut T) -> Result<Self>
     where
         T: QueryExecutor<QueryResult = R>,
         R: QueryResult,
     {
-        if !self.data_type_info.is_empty() {
-            return Ok(());
-        }
         println!("Loading database structure");
         let mut type_map = Vec::new();
-        let (_, rows) = self.executor.query("
+        let (_, rows) = executor.query("
             SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
             FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog')
@@ -85,7 +83,32 @@ impl<T, D> QueryDataType<T, D> {
                 },
             ));
         }
-        self.data_type_info = type_map;
+        Ok(Self(type_map))
+    }
+}
+
+pub struct QueryDataType<T, D> {
+    executor: T,
+    dialect: D,
+    data_type_info: DataTypeInfo,
+    default_schema: Schema,
+}
+
+impl<T, D> QueryDataType<T, D> {
+    pub fn new(executor: T, dialect: D, data_type_info: DataTypeInfo) -> Self {
+        Self {
+            executor,
+            dialect,
+            data_type_info: data_type_info,
+            default_schema: String::new(),
+        }
+    }
+
+    fn load_internals<R>(&mut self) -> Result<()>
+    where
+        T: QueryExecutor<QueryResult = R>,
+        R: QueryResult,
+    {
         if self.default_schema.is_empty() {
             println!("Loading current schema");
             let (_, mut rows) = self

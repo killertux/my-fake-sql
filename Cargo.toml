@@ -7,13 +7,12 @@ edition = "2021"
 
 [dependencies]
 msql-srv = { git = "https://github.com/killertux/msql-srv.git", branch = "feature/secure-connection" }
-# msql-srv = { path = "../msql-srv" }
+sqlparser = { git = "https://github.com/killertux/sqlparser-rs.git", branch = "feature/add-support-for-double-quoted-srtring" }
 itertools = "0.10"
 serde_yaml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 reqwest = {version = "0.11", features = ["blocking", "json"]}
 ritelinked = "0.3"
-sqlparser = "0.16"
 chrono = "0.4"
 dirs = "4.0"
 anyhow = "1"
