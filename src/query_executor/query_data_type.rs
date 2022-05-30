@@ -489,7 +489,7 @@ where
                                             ColumnValue::DateTime(
                                                 NaiveDateTime::parse_from_str(
                                                     &value,
-                                                    "%Y-%m-%d %H:%M:%S",
+                                                    "%Y-%m-%d %H:%M:%S%.f",
                                                 )
                                                 .unwrap(),
                                             )
