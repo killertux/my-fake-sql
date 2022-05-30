@@ -1,10 +1,14 @@
 use msql_srv::*;
-use query_executor::{QueryAccumulator, QueryDataType, QueryFilter, QuerySanitizer, RunopsApi};
+use query_executor::{
+    InMemoryQueryStorage, QueryAccumulator, QueryCache, QueryDataType, QueryFilter, QuerySanitizer,
+    RunopsApi,
+};
 use query_executor_backend::Backend;
 use serde::Deserialize;
 use sqlparser::dialect::MySqlDialect;
+use std::collections::HashSet;
 use std::fs::File;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::thread;
 
 mod query_executor;
@@ -15,6 +19,7 @@ struct YamlTargetConfig {
     port: u16,
     target: String,
     with_type_discovery: Option<bool>,
+    query_cache: Option<Vec<String>>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -31,35 +36,66 @@ fn main() -> std::io::Result<()> {
 fn tcp_listener(config: YamlTargetConfig) -> std::io::Result<()> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))
         .expect(&format!("Error binding to port {}", config.port));
+    let queries_connection_cache: HashSet<String> = match &config.query_cache {
+        None => HashSet::new(),
+        Some(paths) => paths
+            .iter()
+            .flat_map(|path| {
+                std::fs::read_to_string(path)
+                    .expect("")
+                    .split("|\n")
+                    .map(|query| query.to_string())
+                    .collect::<Vec<String>>()
+            })
+            .collect(),
+    };
 
+    let query_storage = InMemoryQueryStorage::new();
     while let Ok((s, _)) = listener.accept() {
-        spawn_sql_processor(&config, s)
+        spawn_sql_processor(
+            &config,
+            s,
+            queries_connection_cache.clone(),
+            query_storage.clone(),
+        )
     }
     Ok(())
 }
 
-fn spawn_sql_processor(config: &YamlTargetConfig, s: std::net::TcpStream) {
+fn spawn_sql_processor(
+    config: &YamlTargetConfig,
+    s: TcpStream,
+    queries_connection_cache: HashSet<String>,
+    storage: InMemoryQueryStorage,
+) {
     let target = config.target.clone();
     let with_type_discovery = config.with_type_discovery.clone();
+
     thread::spawn(move || {
         if let Some(true) = with_type_discovery {
             MysqlIntermediary::run_on_tcp(
-                Backend::new(QuerySanitizer::new(QueryFilter::new(QueryDataType::new(
-                    QueryAccumulator::new(
-                        RunopsApi::new(target).expect("Error creating runops client"),
-                    ),
-                    MySqlDialect {},
-                )))),
+                Backend::new(QueryCache::new(
+                    QuerySanitizer::new(QueryFilter::new(QueryDataType::new(
+                        QueryAccumulator::new(
+                            RunopsApi::new(target).expect("Error creating runops client"),
+                        ),
+                        MySqlDialect {},
+                    ))),
+                    storage,
+                    queries_connection_cache,
+                )),
                 s,
             )
             .unwrap();
         } else {
             MysqlIntermediary::run_on_tcp(
-                Backend::new(QuerySanitizer::new(QueryFilter::new(
-                    QueryAccumulator::new(
+                Backend::new(QueryCache::new(
+                    QuerySanitizer::new(QueryFilter::new(QueryAccumulator::new(
                         RunopsApi::new(target).expect("Error creating runops client"),
-                    ),
-                ))),
+                    ))),
+                    InMemoryQueryStorage::new(),
+                    queries_connection_cache,
+                )),
                 s,
             )
             .unwrap();

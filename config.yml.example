@@ -1,54 +1,90 @@
 - port: 4242
   target: read-bigdog-cross-border
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4243
   target: read-bigdog-diamond
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4244
   target: read-bigdog-local-latam
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4245
   target: read-bigdog-sandbox
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4246
   target: read-cerberus-cross-border
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4247
   target: read-cerberus-diamond
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4248
   target: read-cerberus-local-latam
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4249
   target: read-librarian-cross-border
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4250
   target: read-librarian-diamond
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4251
   target: read-librarian-local-latam
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4252
   target: read-pay-cross-border
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4253
   target: read-pay-diamond
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4254
   target: read-pay-local-latam
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4255
   target: read-sandbox-pay-cross-border
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4256
   target: read-sandbox-pay-local-latam
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4257
   target: read-wayne-cross-border
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4258
   target: read-wayne-diamond
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql
 - port: 4259
   target: read-wayne-local-latam
   with_type_discovery: true
+  query_cache:
+    - ./queries_cache/phpstorm.sql

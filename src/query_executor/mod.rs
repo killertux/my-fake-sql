@@ -4,20 +4,23 @@ use msql_srv::{Column, ColumnFlags, ColumnType, ToMysqlValue};
 use std::io::{BufRead, BufReader, Read, Write};
 
 pub use query_accumulator::QueryAccumulator;
+pub use query_cache::{InMemoryQueryStorage, QueryCache};
 pub use query_data_type::QueryDataType;
 pub use query_filter::QueryFilter;
 pub use query_sanitizer::QuerySanitizer;
 pub use runops::{RunopsApi, SqlError};
 
 mod query_accumulator;
+mod query_cache;
 mod query_data_type;
 mod query_filter;
 mod query_sanitizer;
 mod runops;
 
-pub type Rows = Vec<ColumnValue>;
+pub type Row = Vec<ColumnValue>;
 type Columns = Vec<Column>;
 
+#[derive(Clone)]
 pub enum ColumnValue {
     Null,
     String(String),
@@ -76,7 +79,7 @@ pub trait QueryExecutor {
 }
 
 pub trait QueryResult {
-    fn get_data(self) -> (Result<Columns>, Box<dyn Iterator<Item = Result<Rows>>>);
+    fn get_data(self) -> (Result<Columns>, Box<dyn Iterator<Item = Result<Row>>>);
 }
 
 pub struct ReaderQueryResult {
@@ -84,7 +87,7 @@ pub struct ReaderQueryResult {
 }
 
 impl QueryResult for ReaderQueryResult {
-    fn get_data(mut self) -> (Result<Columns>, Box<dyn Iterator<Item = Result<Rows>>>) {
+    fn get_data(mut self) -> (Result<Columns>, Box<dyn Iterator<Item = Result<Row>>>) {
         (self.get_columns(), self.get_rows())
     }
 }
@@ -112,7 +115,7 @@ impl ReaderQueryResult {
             .collect())
     }
 
-    fn get_rows(self) -> Box<dyn Iterator<Item = Result<Rows>>> {
+    fn get_rows(self) -> Box<dyn Iterator<Item = Result<Row>>> {
         Box::new(
             self.reader
                 .lines()
