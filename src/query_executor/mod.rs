@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 
 pub use query_accumulator::QueryAccumulator;
 pub use query_cache::{InMemoryQueryStorage, QueryCache};
-pub use query_data_type::QueryDataType;
+pub use query_data_type::{DataTypeInfo, QueryDataType};
 pub use query_filter::QueryFilter;
 pub use query_sanitizer::QuerySanitizer;
 pub use runops::{RunopsApi, SqlError};
