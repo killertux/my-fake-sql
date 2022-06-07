@@ -74,10 +74,7 @@ where
                 Ok(None) => Ok(None),
                 Err(err) => Err(err),
             },
-            Some(result) => {
-                panic!("fuck3");
-                Ok(Some(CachedQueryResult::CachedResult(result)))
-            }
+            Some(result) => Ok(Some(CachedQueryResult::CachedResult(result))),
         }
     }
 }

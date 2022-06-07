@@ -149,8 +149,7 @@ where
     type QueryResult = ResultWithCustomColumnTypes<R>;
 
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
-        if query.to_lowercase().starts_with("use") {
-            panic!("fuck5");
+        if query.starts_with("use") {
             return match self.executor.query(query) {
                 Ok(option) => {
                     self.default_schema = query.split_ascii_whitespace().skip(1).take(1).collect();
@@ -164,8 +163,7 @@ where
                 Err(error) => Err(error),
             };
         }
-        if !query.to_lowercase().starts_with("select") {
-            panic!("fuck6");
+        if !query.starts_with("select") {
             return match self.executor.query(query) {
                 Ok(Some(result)) => {
                     Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))

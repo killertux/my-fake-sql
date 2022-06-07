@@ -16,7 +16,6 @@ where
     type QueryResult = T::QueryResult;
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
         if query == "SHOW WARNINGS" {
-            panic!("fuck1");
             return Ok(None);
         }
 
