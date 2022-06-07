@@ -149,8 +149,9 @@ where
     type QueryResult = ResultWithCustomColumnTypes<R>;
 
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
+        let query = query.to_lowercase();
         if query.starts_with("use") {
-            return match self.executor.query(query) {
+            return match self.executor.query(&query) {
                 Ok(option) => {
                     self.default_schema = query.split_ascii_whitespace().skip(1).take(1).collect();
                     match option {
@@ -164,7 +165,7 @@ where
             };
         }
         if !query.starts_with("select") {
-            return match self.executor.query(query) {
+            return match self.executor.query(&query) {
                 Ok(Some(result)) => {
                     Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))
                 }
@@ -178,7 +179,7 @@ where
         );
         if ast.is_err() {
             println!("Failed to parse SQL. Result will not have types. {:?}", ast);
-            return match self.executor.query(query) {
+            return match self.executor.query(&query) {
                 Ok(Some(result)) => {
                     Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))
                 }
@@ -192,7 +193,7 @@ where
                 "Failed to find proper types. Result will not have types. {:?}",
                 columns_types
             );
-            return match self.executor.query(query) {
+            return match self.executor.query(&query) {
                 Ok(Some(result)) => {
                     Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))
                 }
@@ -202,7 +203,7 @@ where
         }
         let columns_types = columns_types?;
         println!("Expected column types : {:?}", columns_types);
-        let result = self.executor.query(query)?;
+        let result = self.executor.query(&query)?;
         Ok(Some(ResultWithCustomColumnTypes::new(
             result,
             columns_types,

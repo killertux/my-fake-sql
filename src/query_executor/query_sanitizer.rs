@@ -21,6 +21,7 @@ where
             query = remove_comments_from_the_start(query);
         }
         query = query
+            .trim()
             .lines()
             .map(|line| line.trim())
             .filter(|line| !line.trim().starts_with("--"))
