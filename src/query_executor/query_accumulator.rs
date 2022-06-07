@@ -24,6 +24,7 @@ where
     type QueryResult = T::QueryResult;
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
         if query.to_lowercase().starts_with("set") {
+            panic!("fuck2");
             self.acc.insert(query.to_string());
             return Ok(None);
         }
