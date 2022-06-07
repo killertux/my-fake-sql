@@ -23,6 +23,7 @@ where
         query = query
             .trim()
             .lines()
+            .map(|line| line.trim())
             .filter(|line| !line.trim().starts_with("--"))
             .filter(|line| !line.trim().starts_with("#"))
             .collect::<Vec<&str>>()
