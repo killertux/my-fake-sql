@@ -150,6 +150,7 @@ where
 
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
         if query.to_lowercase().starts_with("use") {
+            panic!("fuck5");
             return match self.executor.query(query) {
                 Ok(option) => {
                     self.default_schema = query.split_ascii_whitespace().skip(1).take(1).collect();
@@ -164,6 +165,7 @@ where
             };
         }
         if !query.to_lowercase().starts_with("select") {
+            panic!("fuck6");
             return match self.executor.query(query) {
                 Ok(Some(result)) => {
                     Ok(Some(ResultWithCustomColumnTypes::new(Some(result), vec![])))
