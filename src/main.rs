@@ -1,9 +1,9 @@
 use msql_srv::*;
+use mysql_query_executor_backend::Backend;
 use query_executor::{
-    DataTypeInfo, InMemoryQueryStorage, QueryAccumulator, QueryCache, QueryDataType, QueryFilter,
-    QuerySanitizer, RunopsApi,
+    DataTypeInfo, InMemoryQueryStorage, QueryAccumulator, QueryCache, QueryDataType, QueryExecutor,
+    QueryFilter, QueryResult, QuerySanitizer, RunopsApi,
 };
-use query_executor_backend::Backend;
 use serde::Deserialize;
 use sqlparser::dialect::MySqlDialect;
 use std::collections::HashSet;
@@ -11,8 +11,8 @@ use std::fs::File;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
+mod mysql_query_executor_backend;
 mod query_executor;
-mod query_executor_backend;
 
 #[derive(Deserialize)]
 struct YamlTargetConfig {
@@ -20,6 +20,13 @@ struct YamlTargetConfig {
     target: String,
     with_type_discovery: Option<bool>,
     query_cache: Option<Vec<String>>,
+    target_type: Option<TargetType>,
+}
+
+#[derive(Deserialize, Clone)]
+enum TargetType {
+    MySql,
+    Postgres,
 }
 
 fn main() -> std::io::Result<()> {
@@ -73,43 +80,67 @@ fn spawn_sql_processor(
 ) {
     let target = config.target.clone();
     let with_type_discovery = config.with_type_discovery.clone();
+    let target_type = config.target_type.clone().unwrap_or(TargetType::MySql);
 
     if let Some(true) = with_type_discovery {
-        let mut runops_api = RunopsApi::new(target).expect("Error creating runops client");
-        *data_type_info = data_type_info
-            .take()
-            .or_else(|| Some(DataTypeInfo::load(&mut runops_api).expect("Error loading datatype")));
-        let data_type_info_clone = data_type_info.clone().unwrap();
-        thread::spawn(move || {
-            MysqlIntermediary::run_on_tcp(
-                Backend::new(QueryCache::new(
-                    QuerySanitizer::new(QueryFilter::new(QueryDataType::new(
-                        QueryAccumulator::new(runops_api),
-                        MySqlDialect {},
-                        data_type_info_clone,
-                    ))),
-                    storage,
-                    queries_connection_cache,
-                )),
-                s,
-            )
-            .unwrap()
-        });
+        let query_executor = construct_query_executor_with_data_type(
+            target,
+            queries_connection_cache,
+            storage,
+            data_type_info,
+        );
+        spawn_intermediary(s, query_executor, target_type)
     } else {
-        thread::spawn(move || {
-            MysqlIntermediary::run_on_tcp(
-                Backend::new(QueryCache::new(
-                    QuerySanitizer::new(QueryFilter::new(QueryAccumulator::new(
-                        RunopsApi::new(target).expect("Error creating runops client"),
-                    ))),
-                    storage,
-                    queries_connection_cache,
-                )),
-                s,
-            )
-            .unwrap()
-        });
+        let query_executor = construct_query_executor(target, queries_connection_cache, storage);
+        spawn_intermediary(s, query_executor, target_type)
     }
+}
 
-    thread::spawn(move || {});
+fn construct_query_executor_with_data_type(
+    target: String,
+    queries_connection_cache: HashSet<String>,
+    storage: InMemoryQueryStorage,
+    data_type_info: &mut Option<DataTypeInfo>,
+) -> impl QueryExecutor<QueryResult = impl QueryResult> {
+    let mut runops_api = RunopsApi::new(target).expect("Error creating runops client");
+    *data_type_info = data_type_info
+        .take()
+        .or_else(|| Some(DataTypeInfo::load(&mut runops_api).expect("Error loading datatype")));
+    let data_type_info_clone = data_type_info.clone().unwrap();
+    QueryCache::new(
+        QuerySanitizer::new(QueryFilter::new(QueryDataType::new(
+            QueryAccumulator::new(runops_api),
+            MySqlDialect {},
+            data_type_info_clone,
+        ))),
+        storage,
+        queries_connection_cache,
+    )
+}
+
+fn construct_query_executor(
+    target: String,
+    queries_connection_cache: HashSet<String>,
+    storage: InMemoryQueryStorage,
+) -> impl QueryExecutor<QueryResult = impl QueryResult> {
+    QueryCache::new(
+        QuerySanitizer::new(QueryFilter::new(QueryAccumulator::new(
+            RunopsApi::new(target).expect("Error creating runops client"),
+        ))),
+        storage,
+        queries_connection_cache,
+    )
+}
+
+fn spawn_intermediary(
+    s: TcpStream,
+    query_executor: impl QueryExecutor<QueryResult = impl QueryResult> + Send + 'static,
+    target_type: TargetType,
+) {
+    thread::spawn(move || match target_type {
+        TargetType::MySql => {
+            MysqlIntermediary::run_on_tcp(Backend::new(query_executor), s).unwrap();
+        }
+        TargetType::Postgres => unimplemented!("Postgress bindings not implemented yet"),
+    });
 }

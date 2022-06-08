@@ -1,7 +1,6 @@
 use anyhow::Result;
 use chrono::{NaiveDate, NaiveDateTime};
-use msql_srv::{Column, ColumnFlags, ColumnType, ToMysqlValue};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 
 pub use query_accumulator::QueryAccumulator;
 pub use query_cache::{InMemoryQueryStorage, QueryCache};
@@ -34,43 +33,10 @@ pub enum ColumnValue {
     Date(NaiveDate),
 }
 
-impl ToMysqlValue for ColumnValue {
-    fn is_null(&self) -> bool {
-        match self {
-            ColumnValue::Null => true,
-            _ => false,
-        }
-    }
-
-    fn to_mysql_text<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        match self {
-            ColumnValue::Null => w.write_all(&[0xFB]),
-            ColumnValue::String(string) => string.to_mysql_text(w),
-            ColumnValue::I64(number) => number.to_mysql_text(w),
-            ColumnValue::I32(number) => number.to_mysql_text(w),
-            ColumnValue::I16(number) => number.to_mysql_text(w),
-            ColumnValue::I8(number) => number.to_mysql_text(w),
-            ColumnValue::Double(number) => number.to_mysql_text(w),
-            ColumnValue::Float(number) => number.to_mysql_text(w),
-            ColumnValue::DateTime(date_time) => date_time.to_mysql_text(w),
-            ColumnValue::Date(date) => date.to_mysql_text(w),
-        }
-    }
-
-    fn to_mysql_bin<W: Write>(&self, w: &mut W, c: &Column) -> std::io::Result<()> {
-        match self {
-            ColumnValue::Null => unreachable!(),
-            ColumnValue::String(string) => string.to_mysql_bin(w, c),
-            ColumnValue::I64(number) => number.to_mysql_bin(w, c),
-            ColumnValue::I32(number) => number.to_mysql_bin(w, c),
-            ColumnValue::I16(number) => number.to_mysql_bin(w, c),
-            ColumnValue::I8(number) => number.to_mysql_bin(w, c),
-            ColumnValue::Double(number) => number.to_mysql_bin(w, c),
-            ColumnValue::Float(number) => number.to_mysql_bin(w, c),
-            ColumnValue::DateTime(date_time) => date_time.to_mysql_bin(w, c),
-            ColumnValue::Date(date) => date.to_mysql_bin(w, c),
-        }
-    }
+#[derive(Clone)]
+pub struct Column {
+    pub name: String,
+    pub ty: Option<String>,
 }
 
 pub trait QueryExecutor {
@@ -107,10 +73,8 @@ impl ReaderQueryResult {
             .map(|column_name| column_name.trim())
             .filter(|column_name| !column_name.is_empty())
             .map(|column| Column {
-                table: "none".to_string(),
-                column: column.to_string(),
-                coltype: ColumnType::MYSQL_TYPE_STRING,
-                colflags: ColumnFlags::empty(),
+                name: column.to_string(),
+                ty: None,
             })
             .collect())
     }
