@@ -1,13 +1,94 @@
-use super::query_executor::{QueryExecutor, QueryResult, SqlError};
+use super::query_executor::{Column, ColumnValue, QueryExecutor, QueryResult, SqlError};
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, NaiveDateTime};
-use msql_srv::Column;
 use msql_srv::*;
+use msql_srv::{Column as MySqlColumn, ColumnFlags};
 use std::io::{Error, Read, Write};
 
 pub struct Backend<T> {
     executor: T,
     prepared_statements: Vec<String>,
+}
+
+impl From<Column> for MySqlColumn {
+    fn from(column: Column) -> Self {
+        MySqlColumn {
+            table: String::new(),
+            column: column.name,
+            colflags: ColumnFlags::empty(),
+            coltype: match column.ty.as_ref().map(|ty| ty.as_str()) {
+                Some("bigint") => ColumnType::MYSQL_TYPE_LONGLONG,
+                Some("varchar") => ColumnType::MYSQL_TYPE_VAR_STRING,
+                Some("tinyint") => ColumnType::MYSQL_TYPE_TINY,
+                Some("datetime") => ColumnType::MYSQL_TYPE_DATETIME,
+                Some("int") => ColumnType::MYSQL_TYPE_LONG,
+                Some("mediumint") => ColumnType::MYSQL_TYPE_LONG,
+                Some("text") => ColumnType::MYSQL_TYPE_STRING,
+                Some("enum") => ColumnType::MYSQL_TYPE_ENUM,
+                Some("decimal") => ColumnType::MYSQL_TYPE_NEWDECIMAL,
+                Some("date") => ColumnType::MYSQL_TYPE_DATE,
+                Some("binary") => ColumnType::MYSQL_TYPE_BLOB,
+                Some("double") => ColumnType::MYSQL_TYPE_DOUBLE,
+                Some("char") => ColumnType::MYSQL_TYPE_STRING,
+                Some("tinytext") => ColumnType::MYSQL_TYPE_STRING,
+                Some("time") => ColumnType::MYSQL_TYPE_TIME,
+                Some("timestamp") => ColumnType::MYSQL_TYPE_TIMESTAMP,
+                Some("smallint") => ColumnType::MYSQL_TYPE_INT24,
+                Some("blob") => ColumnType::MYSQL_TYPE_BLOB,
+                Some("float") => ColumnType::MYSQL_TYPE_FLOAT,
+                Some("mediumblob") => ColumnType::MYSQL_TYPE_MEDIUM_BLOB,
+                Some("longtext") => ColumnType::MYSQL_TYPE_STRING,
+                Some("mediumtext") => ColumnType::MYSQL_TYPE_STRING,
+                Some("varbinary") => ColumnType::MYSQL_TYPE_BLOB,
+                Some("year") => ColumnType::MYSQL_TYPE_YEAR,
+                Some("bit") => ColumnType::MYSQL_TYPE_BIT,
+                None => ColumnType::MYSQL_TYPE_STRING,
+                Some(any) => {
+                    println!("Type not mapped {}", any);
+                    ColumnType::MYSQL_TYPE_STRING
+                }
+            },
+        }
+    }
+}
+
+impl ToMysqlValue for ColumnValue {
+    fn is_null(&self) -> bool {
+        match self {
+            ColumnValue::Null => true,
+            _ => false,
+        }
+    }
+
+    fn to_mysql_text<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        match self {
+            ColumnValue::Null => w.write_all(&[0xFB]),
+            ColumnValue::String(string) => string.to_mysql_text(w),
+            ColumnValue::I64(number) => number.to_mysql_text(w),
+            ColumnValue::I32(number) => number.to_mysql_text(w),
+            ColumnValue::I16(number) => number.to_mysql_text(w),
+            ColumnValue::I8(number) => number.to_mysql_text(w),
+            ColumnValue::Double(number) => number.to_mysql_text(w),
+            ColumnValue::Float(number) => number.to_mysql_text(w),
+            ColumnValue::DateTime(date_time) => date_time.to_mysql_text(w),
+            ColumnValue::Date(date) => date.to_mysql_text(w),
+        }
+    }
+
+    fn to_mysql_bin<W: Write>(&self, w: &mut W, c: &MySqlColumn) -> std::io::Result<()> {
+        match self {
+            ColumnValue::Null => unreachable!(),
+            ColumnValue::String(string) => string.to_mysql_bin(w, c),
+            ColumnValue::I64(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I32(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I16(number) => number.to_mysql_bin(w, c),
+            ColumnValue::I8(number) => number.to_mysql_bin(w, c),
+            ColumnValue::Double(number) => number.to_mysql_bin(w, c),
+            ColumnValue::Float(number) => number.to_mysql_bin(w, c),
+            ColumnValue::DateTime(date_time) => date_time.to_mysql_bin(w, c),
+            ColumnValue::Date(date) => date.to_mysql_bin(w, c),
+        }
+    }
 }
 
 impl<T> Backend<T> {
@@ -32,7 +113,10 @@ impl<T> Backend<T> {
         match result {
             Ok(Some(query_result)) => {
                 let (columns, rows) = query_result.get_data();
-                let columns = columns?;
+                let columns = columns?
+                    .into_iter()
+                    .map(|column| column.into())
+                    .collect::<Vec<MySqlColumn>>();
                 if columns.is_empty() {
                     return Ok(results.completed(0, 0)?);
                 }
@@ -69,10 +153,10 @@ where
 
     fn on_prepare(&mut self, query: &str, info: StatementMetaWriter<W>) -> std::io::Result<()> {
         self.prepared_statements.push(query.to_string());
-        let params: Vec<Column> = query
+        let params: Vec<MySqlColumn> = query
             .chars()
             .filter(|character| *character == '?')
-            .map(|_| Column {
+            .map(|_| MySqlColumn {
                 table: "none".to_string(),
                 column: "?".to_string(),
                 coltype: ColumnType::MYSQL_TYPE_STRING,

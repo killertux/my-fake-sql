@@ -1,7 +1,6 @@
-use super::{ColumnValue, QueryExecutor, QueryResult, Row};
+use super::{Column, ColumnValue, QueryExecutor, QueryResult, Row};
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, NaiveDateTime};
-use msql_srv::{Column, ColumnFlags, ColumnType};
 use sqlparser::ast::{
     Expr, FunctionArg, FunctionArgExpr, SelectItem, SetExpr, SetOperator, Statement, TableFactor,
 };
@@ -13,6 +12,7 @@ type Schema = String;
 type TableName = String;
 type TableAlias = String;
 type ColumnName = String;
+type ColumnType = Option<String>;
 
 #[derive(Clone, Debug)]
 pub struct DataTypeInfo(Vec<(Schema, TableName, ColumnName, ColumnType)>);
@@ -50,37 +50,7 @@ impl DataTypeInfo {
                 to_string(&row[0]).into(),
                 to_string(&row[1]).into(),
                 to_string(&row[2]).into(),
-                match to_string(&row[3]).as_ref() {
-                    "bigint" => ColumnType::MYSQL_TYPE_LONGLONG,
-                    "varchar" => ColumnType::MYSQL_TYPE_VAR_STRING,
-                    "tinyint" => ColumnType::MYSQL_TYPE_TINY,
-                    "datetime" => ColumnType::MYSQL_TYPE_DATETIME,
-                    "int" => ColumnType::MYSQL_TYPE_LONG,
-                    "mediumint" => ColumnType::MYSQL_TYPE_LONG,
-                    "text" => ColumnType::MYSQL_TYPE_STRING,
-                    "enum" => ColumnType::MYSQL_TYPE_ENUM,
-                    "decimal" => ColumnType::MYSQL_TYPE_NEWDECIMAL,
-                    "date" => ColumnType::MYSQL_TYPE_DATE,
-                    "binary" => ColumnType::MYSQL_TYPE_BLOB,
-                    "double" => ColumnType::MYSQL_TYPE_DOUBLE,
-                    "char" => ColumnType::MYSQL_TYPE_STRING,
-                    "tinytext" => ColumnType::MYSQL_TYPE_STRING,
-                    "time" => ColumnType::MYSQL_TYPE_TIME,
-                    "timestamp" => ColumnType::MYSQL_TYPE_TIMESTAMP,
-                    "smallint" => ColumnType::MYSQL_TYPE_INT24,
-                    "blob" => ColumnType::MYSQL_TYPE_BLOB,
-                    "float" => ColumnType::MYSQL_TYPE_FLOAT,
-                    "mediumblob" => ColumnType::MYSQL_TYPE_MEDIUM_BLOB,
-                    "longtext" => ColumnType::MYSQL_TYPE_STRING,
-                    "mediumtext" => ColumnType::MYSQL_TYPE_STRING,
-                    "varbinary" => ColumnType::MYSQL_TYPE_BLOB,
-                    "year" => ColumnType::MYSQL_TYPE_YEAR,
-                    "bit" => ColumnType::MYSQL_TYPE_BIT,
-                    any => {
-                        println!("Type not mapped {}", any);
-                        ColumnType::MYSQL_TYPE_STRING
-                    }
-                },
+                Some(to_string(&row[3]).into()),
             ));
         }
         Ok(Self(type_map))
@@ -429,7 +399,7 @@ fn find_type(
             .find(|(_, s_column_name, _)| s_column_name == column_name),
     }
     .map(|(_, column_name, column_type)| (column_name.clone(), column_type.clone()))
-    .unwrap_or((column_name.to_string(), ColumnType::MYSQL_TYPE_STRING)) // We should probably inform when this happens
+    .unwrap_or((column_name.to_string(), None)) // We should probably inform when this happens
 }
 
 pub struct ResultWithCustomColumnTypes<T> {
@@ -471,7 +441,7 @@ where
                                 .into_iter()
                                 .zip(&self.column_types)
                                 .map(|(mut column, column_type)| {
-                                    column.coltype = column_type.1;
+                                    column.ty = column_type.1.clone();
                                     column
                                 })
                                 .collect())
@@ -486,47 +456,50 @@ where
                                 .zip(&self.column_types)
                                 .map(|(column_value, column_type)| match column_value {
                                     ColumnValue::Null => ColumnValue::Null,
-                                    ColumnValue::String(value) => match column_type.1 {
-                                        ColumnType::MYSQL_TYPE_LONGLONG => {
-                                            ColumnValue::I64(value.parse::<i64>().unwrap())
-                                        }
-                                        ColumnType::MYSQL_TYPE_LONG
-                                        | ColumnType::MYSQL_TYPE_INT24 => {
-                                            ColumnValue::I32(value.parse::<i32>().unwrap())
-                                        }
-                                        ColumnType::MYSQL_TYPE_SHORT
-                                        | ColumnType::MYSQL_TYPE_YEAR => {
-                                            ColumnValue::I16(value.parse::<i16>().unwrap())
-                                        }
-                                        ColumnType::MYSQL_TYPE_TINY => {
-                                            ColumnValue::I8(value.parse::<i8>().unwrap())
-                                        }
-                                        ColumnType::MYSQL_TYPE_DOUBLE => {
-                                            ColumnValue::Double(value.parse::<f64>().unwrap())
-                                        }
-                                        ColumnType::MYSQL_TYPE_FLOAT => {
-                                            ColumnValue::Float(value.parse::<f32>().unwrap())
-                                        }
-                                        ColumnType::MYSQL_TYPE_TIMESTAMP
-                                        | ColumnType::MYSQL_TYPE_DATETIME
-                                        | ColumnType::MYSQL_TYPE_DATETIME2 => {
-                                            ColumnValue::DateTime(
-                                                NaiveDateTime::parse_from_str(
-                                                    &value,
-                                                    "%Y-%m-%d %H:%M:%S%.f",
+                                    ColumnValue::String(value) => {
+                                        match column_type.1.as_ref().map(|string| string.as_str()) {
+                                            Some("bigint") => {
+                                                ColumnValue::I64(value.parse::<i64>().unwrap())
+                                            }
+                                            Some("int") | Some("mediumint") => {
+                                                ColumnValue::I32(value.parse::<i32>().unwrap())
+                                            }
+                                            Some("smallint") | Some("year") => {
+                                                ColumnValue::I16(value.parse::<i16>().unwrap())
+                                            }
+                                            Some("tinyint") => {
+                                                ColumnValue::I8(value.parse::<i8>().unwrap())
+                                            }
+                                            Some("double") => {
+                                                ColumnValue::Double(value.parse::<f64>().unwrap())
+                                            }
+                                            Some("float") => {
+                                                ColumnValue::Float(value.parse::<f32>().unwrap())
+                                            }
+                                            Some("timestamp") | Some("datetime") => {
+                                                ColumnValue::DateTime(
+                                                    NaiveDateTime::parse_from_str(
+                                                        &value,
+                                                        "%Y-%m-%d %H:%M:%S%.f",
+                                                    )
+                                                    .unwrap(),
                                                 )
-                                                .unwrap(),
-                                            )
+                                            }
+                                            Some("date") => ColumnValue::Date(
+                                                NaiveDate::parse_from_str(&value, "%Y-%m-%d")
+                                                    .unwrap(),
+                                            ),
+                                            Some("decimal") | Some("text") | Some("char")
+                                            | Some("tinytext") | Some("longtext")
+                                            | Some("mediumtext") | Some("varchar") | None => {
+                                                ColumnValue::String(value)
+                                            }
+                                            Some(any) => {
+                                                println!("Type not mapped {}", any);
+                                                ColumnValue::String(value)
+                                            }
                                         }
-                                        ColumnType::MYSQL_TYPE_DATE => ColumnValue::Date(
-                                            NaiveDate::parse_from_str(&value, "%Y-%m-%d").unwrap(),
-                                        ),
-                                        ColumnType::MYSQL_TYPE_DECIMAL
-                                        | ColumnType::MYSQL_TYPE_NEWDECIMAL
-                                        | ColumnType::MYSQL_TYPE_STRING
-                                        | ColumnType::MYSQL_TYPE_VAR_STRING
-                                        | _ => ColumnValue::String(value),
-                                    },
+                                    }
                                     _ => panic!("We should only have string format here"),
                                 })
                                 .collect()),
@@ -539,10 +512,8 @@ where
                     .column_types
                     .into_iter()
                     .map(|(column_name, column_type)| Column {
-                        table: "none".to_string(),
-                        column: column_name,
-                        coltype: column_type,
-                        colflags: ColumnFlags::empty(),
+                        name: column_name,
+                        ty: column_type,
                     })
                     .collect()),
                 Box::new(std::iter::empty()),
@@ -592,16 +563,16 @@ fn process_expr(
                         },
                         _ => bail!("Cant handle names function arg"),
                     };
-                    if first.1 == ColumnType::MYSQL_TYPE_STRING {
+                    if first.1 == None {
                         Ok(second)
                     } else {
                         Ok(first)
                     }
                 }
-                _ => Ok((name, ColumnType::MYSQL_TYPE_STRING)), // We should probably warn this cases
+                _ => Ok((name, None)), // We should probably warn this cases
             }
         }
-        _ => Ok(("unknown".to_string(), ColumnType::MYSQL_TYPE_STRING)), // We should probably warn this cases
+        _ => Ok(("unknown".to_string(), None)), // We should probably warn this cases
     }
 }
 
