@@ -1,6 +1,7 @@
 use super::{Column, ColumnValue, QueryExecutor, QueryResult, Row};
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, NaiveDateTime};
+use itertools::Itertools;
 use sqlparser::ast::{
     Expr, FunctionArg, FunctionArgExpr, SelectItem, SetExpr, SetOperator, Statement, TableFactor,
 };
@@ -38,14 +39,21 @@ impl DataTypeInfo {
     {
         println!("Loading database structure");
         let mut type_map = Vec::new();
-        let (_, rows) = executor.query("
+        let (_, rows) = executor
+            .query(
+                "
             SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
             FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog')
             ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION;
-        ")?.unwrap().get_data();
+        ",
+            )?
+            .unwrap()
+            .get_data();
         for row in rows {
             let row = row?;
+            if row.len() < 4 {
+                continue;
+            }
             type_map.push((
                 to_string(&row[0]).into(),
                 to_string(&row[1]).into(),
@@ -54,6 +62,36 @@ impl DataTypeInfo {
             ));
         }
         Ok(Self(type_map))
+    }
+
+    pub fn get_columns_types_from_ast(
+        &mut self,
+        default_schema: &str,
+        ast: Vec<Statement>,
+    ) -> Result<Vec<(ColumnName, ColumnType)>> {
+        if ast.len() == 0 {
+            return Ok(vec![]);
+        }
+        if ast.len() > 1 {
+            bail!("We need to be able to handle multiple statements");
+        }
+        match &ast[0] {
+            Statement::Query(query) => {
+                let table_with_aliases =
+                    get_tables_with_aliases_from_set_expr(&query.body, self, default_schema)?;
+                let alias_to_column_and_type =
+                    get_alias_with_clomuns_and_column_type(table_with_aliases, self);
+                get_columns_types(get_expr(&ast)?.unwrap(), alias_to_column_and_type)
+            }
+            Statement::ShowVariable { variable } => {
+                let name = variable
+                    .into_iter()
+                    .map(|ident| ident.value.clone())
+                    .join("_");
+                Ok(vec![(name, Some("text".to_string()))])
+            }
+            any => bail!("We cand parse {}", any),
+        }
     }
 }
 
@@ -102,11 +140,7 @@ impl<T, D> QueryDataType<T, D> {
     {
         self.load_internals()?;
         let mut data_type_info = self.data_type_info.clone();
-        let table_with_aliases =
-            get_tables_with_aliases(&ast, &mut data_type_info, &self.default_schema)?;
-        let alias_to_column_and_type =
-            get_alias_with_clomuns_and_column_type(table_with_aliases, &mut data_type_info);
-        get_columns_types(get_expr(&ast)?.unwrap(), alias_to_column_and_type)
+        data_type_info.get_columns_types_from_ast(&self.default_schema, ast)
     }
 }
 
@@ -178,22 +212,6 @@ where
             result,
             columns_types,
         )))
-    }
-}
-
-fn get_tables_with_aliases(
-    ast: &Vec<Statement>,
-    data_type_info: &mut Vec<(Schema, TableName, ColumnName, ColumnType)>,
-    default_schema: &str,
-) -> Result<Vec<(Schema, TableName, TableAlias)>> {
-    if ast.len() != 1 {
-        bail!("We need to be able to handle multiple statements");
-    }
-    match &ast[0] {
-        Statement::Query(query) => {
-            get_tables_with_aliases_from_set_expr(&query.body, data_type_info, default_schema)
-        }
-        any => bail!("We can only parse querys - {:?}", any),
     }
 }
 
@@ -572,7 +590,15 @@ fn process_expr(
                 _ => Ok((name, None)), // We should probably warn this cases
             }
         }
-        _ => Ok(("unknown".to_string(), None)), // We should probably warn this cases
+        Expr::Cast { expr, data_type } => Ok((
+            process_expr(&expr, alias_to_column_and_type)?.0,
+            Some(data_type.to_string()),
+        )),
+        Expr::IsNull(expr) | Expr::IsNotNull(expr) => Ok((
+            process_expr(&expr, alias_to_column_and_type)?.0,
+            Some("tinyint".to_string()),
+        )),
+        _ => Ok(dbg!(("unknown".to_string(), None))), // We should probably warn this cases
     }
 }
 

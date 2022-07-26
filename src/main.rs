@@ -1,5 +1,7 @@
 use msql_srv::*;
 use mysql_query_executor_backend::Backend;
+use postgres_query_executor_backend::PostgresBackend;
+use postgres_shim::PostgressIntermediary;
 use query_executor::{
     DataTypeInfo, InMemoryQueryStorage, QueryAccumulator, QueryCache, QueryDataType, QueryExecutor,
     QueryFilter, QueryResult, QuerySanitizer, RunopsApi,
@@ -12,6 +14,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 
 mod mysql_query_executor_backend;
+mod postgres_query_executor_backend;
 mod query_executor;
 
 #[derive(Deserialize)]
@@ -23,7 +26,7 @@ struct YamlTargetConfig {
     target_type: Option<TargetType>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, PartialEq)]
 enum TargetType {
     MySql,
     Postgres,
@@ -89,10 +92,17 @@ fn spawn_sql_processor(
             storage,
             data_type_info,
         );
-        spawn_intermediary(s, query_executor, target_type)
+        spawn_intermediary(s, query_executor, target_type, data_type_info.clone())
+    } else if target_type == TargetType::Postgres {
+        let mut runops_api = RunopsApi::new(target.clone()).expect("Error creating runops client");
+        *data_type_info = data_type_info
+            .take()
+            .or_else(|| Some(DataTypeInfo::load(&mut runops_api).expect("Error loading datatype")));
+        let query_executor = construct_query_executor(target, queries_connection_cache, storage);
+        spawn_intermediary(s, query_executor, target_type, data_type_info.clone())
     } else {
         let query_executor = construct_query_executor(target, queries_connection_cache, storage);
-        spawn_intermediary(s, query_executor, target_type)
+        spawn_intermediary(s, query_executor, target_type, data_type_info.clone())
     }
 }
 
@@ -136,11 +146,19 @@ fn spawn_intermediary(
     s: TcpStream,
     query_executor: impl QueryExecutor<QueryResult = impl QueryResult> + Send + 'static,
     target_type: TargetType,
+    data_type_info: Option<DataTypeInfo>,
 ) {
     thread::spawn(move || match target_type {
         TargetType::MySql => {
             MysqlIntermediary::run_on_tcp(Backend::new(query_executor), s).unwrap();
         }
-        TargetType::Postgres => unimplemented!("Postgress bindings not implemented yet"),
+        TargetType::Postgres => {
+            PostgressIntermediary::new(
+                PostgresBackend::new(query_executor, data_type_info.unwrap()),
+                s,
+            )
+            .run()
+            .unwrap();
+        }
     });
 }

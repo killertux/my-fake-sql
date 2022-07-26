@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 msql-srv = { git = "https://github.com/killertux/msql-srv.git", branch = "feature/secure-connection" }
 sqlparser = { git = "https://github.com/killertux/sqlparser-rs.git", branch = "feature/add-support-for-double-quoted-srtring" }
+postgres-shim = { git = "https://github.com/killertux/posgres-shim.git", branch = "master" }
 itertools = "0.10"
 serde_yaml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
@@ -18,3 +19,4 @@ dirs = "4.0"
 anyhow = "1"
 thiserror = "1"
 dashmap = "5"
+bytes = "1"

@@ -19,7 +19,7 @@ mod runops;
 pub type Row = Vec<ColumnValue>;
 type Columns = Vec<Column>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ColumnValue {
     Null,
     String(String),
@@ -33,7 +33,7 @@ pub enum ColumnValue {
     Date(NaiveDate),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Column {
     pub name: String,
     pub ty: Option<String>,
@@ -68,6 +68,11 @@ impl ReaderQueryResult {
     fn get_columns(&mut self) -> Result<Vec<Column>> {
         let mut header = String::new();
         self.reader.read_line(&mut header)?;
+        // Necessary because of postgress. Maybe we will need a new way of handling this
+        while header == "SET\n" {
+            header.clear();
+            self.reader.read_line(&mut header)?;
+        }
         Ok(header
             .split('\t')
             .map(|column_name| column_name.trim())

@@ -15,7 +15,11 @@ where
 {
     type QueryResult = T::QueryResult;
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
-        if query == "SHOW WARNINGS" {
+        if query == "SHOW WARNINGS"
+            || query == "BEGIN"
+            || query == "COMMIT"
+            || query.trim().is_empty()
+        {
             return Ok(None);
         }
 

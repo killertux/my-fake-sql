@@ -23,7 +23,8 @@ where
 {
     type QueryResult = T::QueryResult;
     fn query(&mut self, query: &str) -> Result<Option<Self::QueryResult>> {
-        if query.to_lowercase().starts_with("set") {
+        let lower_case_query = query.to_lowercase();
+        if lower_case_query.starts_with("set") {
             self.acc.insert(query.to_string());
             return Ok(None);
         }
