@@ -572,7 +572,7 @@ fn process_expr(
                         },
                         _ => bail!("Cant handle names function arg"),
                     };
-                    let second = match &function.args[1] {
+                    let second = match &function.args[2] {
                         FunctionArg::Unnamed(arg) => match arg {
                             FunctionArgExpr::Expr(expr) => {
                                 process_expr(expr, alias_to_column_and_type)?
@@ -586,6 +586,18 @@ fn process_expr(
                     } else {
                         Ok(first)
                     }
+                }
+                "max" => {
+                    let argument = match &function.args[0] {
+                        FunctionArg::Unnamed(arg) => match arg {
+                            FunctionArgExpr::Expr(expr) => {
+                                process_expr(expr, alias_to_column_and_type)?
+                            }
+                            _ => bail!("Cant handle wildcards here"),
+                        },
+                        _ => bail!("Cant handle names function arg"),
+                    };
+                    Ok(argument)
                 }
                 _ => Ok((name, None)), // We should probably warn this cases
             }
