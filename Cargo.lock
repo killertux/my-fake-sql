@@ -873,7 +873,7 @@ dependencies = [
 [[package]]
 name = "msql-srv"
 version = "0.9.6"
-source = "git+https://github.com/killertux/msql-srv.git?branch=feature/secure-connection#ccdd547387660c50ac684fd3c11ffc304f49e3ac"
+source = "git+https://github.com/killertux/msql-srv.git?branch=feature/secure-connection#a4443307880ac537e99810f641ebe6b7666bab7d"
 dependencies = [
  "byteorder",
  "chrono",

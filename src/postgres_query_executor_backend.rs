@@ -25,10 +25,10 @@ impl<T> PostgresBackend<T> {
         }
     }
 
-    fn do_execute<'a, S, R>(
+    fn do_execute<S, R>(
         &mut self,
         query: &str,
-        result_writer: ResultWriter<'a, S>,
+        result_writer: ResultWriter<'_, S>,
         describe_columns: Option<Vec<PostgresColumn>>,
     ) -> Result<()>
     where
@@ -56,13 +56,10 @@ impl<T> PostgresBackend<T> {
                 for row in rows {
                     let row = row?;
                     if row.len() == 1 {
-                        match &row[0] {
-                            ColumnValue::String(string) => {
-                                if string.ends_with("row)") || string.ends_with("rows)") {
-                                    continue;
-                                }
+                        if let ColumnValue::String(string) = &row[0] {
+                            if string.ends_with("row)") || string.ends_with("rows)") {
+                                continue;
                             }
-                            _ => {}
                         }
                     }
                     row_writer.write_row(row)?;
@@ -97,11 +94,7 @@ impl<T> PostgresBackend<T> {
                     .into_iter()
                     .map(|(column_name, column_type)| PostgresColumn {
                         name: column_name,
-                        column_type: match column_type
-                            .map(|ty| ty.to_lowercase())
-                            .as_ref()
-                            .map(|ty| ty.as_str())
-                        {
+                        column_type: match column_type.map(|ty| ty.to_lowercase()).as_deref() {
                             Some("text") | Some("name") | None => Type::TEXT,
                             Some("bigint") => Type::INT8,
                             Some("uuid") => Type::UUID,
@@ -194,12 +187,12 @@ where
         }
     }
 
-    fn execute<'a, S>(
+    fn execute<S>(
         &mut self,
         portal: Portal,
         _: u32,
         columns: Option<Vec<PostgresColumn>>,
-        result_writer: ResultWriter<'a, S>,
+        result_writer: ResultWriter<'_, S>,
     ) -> IoResult<()>
     where
         S: Write,

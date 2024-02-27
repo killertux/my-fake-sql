@@ -16,7 +16,7 @@ impl From<Column> for MySqlColumn {
             table: String::new(),
             column: column.name,
             colflags: ColumnFlags::empty(),
-            coltype: match column.ty.as_ref().map(|ty| ty.as_str()) {
+            coltype: match column.ty.as_deref() {
                 Some("bigint") => ColumnType::MYSQL_TYPE_LONGLONG,
                 Some("varchar") => ColumnType::MYSQL_TYPE_VAR_STRING,
                 Some("tinyint") => ColumnType::MYSQL_TYPE_TINY,
@@ -54,10 +54,7 @@ impl From<Column> for MySqlColumn {
 
 impl ToMysqlValue for ColumnValue {
     fn is_null(&self) -> bool {
-        match self {
-            ColumnValue::Null => true,
-            _ => false,
-        }
+        matches!(self, ColumnValue::Null)
     }
 
     fn to_mysql_text<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -171,10 +168,7 @@ where
         pp: ParamParser,
         results: QueryResultWriter<W>,
     ) -> std::io::Result<()> {
-        let query = self
-            .prepared_statements
-            .get(statement_id as usize)
-            .map(|query| query.clone());
+        let query = self.prepared_statements.get(statement_id as usize).cloned();
         match query {
             Some(mut query) => {
                 for param in pp.into_iter() {
@@ -197,7 +191,7 @@ where
                         }
                         ValueInner::Time(_) => panic!("Not sure how to parse this yet"),
                     };
-                    query = query.replacen("?", &value_str, 1);
+                    query = query.replacen('?', &value_str, 1);
                 }
                 self.on_query(&query, results)
             }
@@ -212,7 +206,8 @@ where
     }
 
     fn on_query(&mut self, query: &str, results: QueryResultWriter<W>) -> std::io::Result<()> {
-        Ok(self.do_query(query, results).unwrap())
+        self.do_query(query, results).unwrap();
+        Ok(())
     }
 }
 

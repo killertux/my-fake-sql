@@ -69,7 +69,7 @@ impl DataTypeInfo {
         default_schema: &str,
         ast: Vec<Statement>,
     ) -> Result<Vec<(ColumnName, ColumnType)>> {
-        if ast.len() == 0 {
+        if ast.is_empty() {
             return Ok(vec![]);
         }
         if ast.len() > 1 {
@@ -84,10 +84,7 @@ impl DataTypeInfo {
                 get_columns_types(get_expr(&ast)?.unwrap(), alias_to_column_and_type)
             }
             Statement::ShowVariable { variable } => {
-                let name = variable
-                    .into_iter()
-                    .map(|ident| ident.value.clone())
-                    .join("_");
+                let name = variable.iter().map(|ident| ident.value.clone()).join("_");
                 Ok(vec![(name, Some("text".to_string()))])
             }
             any => bail!("We cand parse {}", any),
@@ -107,7 +104,7 @@ impl<T, D> QueryDataType<T, D> {
         Self {
             executor,
             dialect,
-            data_type_info: data_type_info,
+            data_type_info,
             default_schema: String::new(),
         }
     }
@@ -244,7 +241,7 @@ fn get_tables_with_aliases_from_set_expr(
             left,
             right: _,
         } => result.append(&mut get_tables_with_aliases_from_set_expr(
-            &left,
+            left,
             data_type_info,
             default_schema,
         )?),
@@ -255,7 +252,7 @@ fn get_tables_with_aliases_from_set_expr(
 
 fn get_alias_with_clomuns_and_column_type(
     tables_with_aliases: Vec<(Schema, TableName, TableAlias)>,
-    data_type_info: &Vec<(Schema, TableName, ColumnName, ColumnType)>,
+    data_type_info: &[(Schema, TableName, ColumnName, ColumnType)],
 ) -> Vec<(TableAlias, ColumnName, ColumnType)> {
     tables_with_aliases
         .into_iter()
@@ -324,7 +321,7 @@ fn process_table_factor(
                 any => bail!("We can only parse selects - {:?}", any),
             }
             let alias_to_column_and_type =
-                get_alias_with_clomuns_and_column_type(result, &mut temp_data_type_info);
+                get_alias_with_clomuns_and_column_type(result, &temp_data_type_info);
 
             let alias = alias.as_ref().unwrap().name.value.clone();
             for (column_name, column_type) in
@@ -338,7 +335,7 @@ fn process_table_factor(
     }
 }
 
-fn get_expr(ast: &Vec<Statement>) -> Result<Option<&SetExpr>> {
+fn get_expr(ast: &[Statement]) -> Result<Option<&SetExpr>> {
     if ast.len() != 1 {
         bail!("We need to be able to handle multiple statements");
     }
@@ -393,14 +390,14 @@ fn get_columns_types(
             all: _,
             left,
             right: _,
-        } => result.append(&mut get_columns_types(&left, alias_to_column_and_type)?),
+        } => result.append(&mut get_columns_types(left, alias_to_column_and_type)?),
         any => bail!("We can only parse selects - {:?}", any),
     }
     Ok(result)
 }
 
 fn find_type(
-    alias_to_column_and_type: &Vec<(String, String, ColumnType)>,
+    alias_to_column_and_type: &[(String, String, ColumnType)],
     column_name: &str,
     table_name: Option<&str>,
 ) -> (ColumnName, ColumnType) {
@@ -474,50 +471,50 @@ where
                                 .zip(&self.column_types)
                                 .map(|(column_value, column_type)| match column_value {
                                     ColumnValue::Null => ColumnValue::Null,
-                                    ColumnValue::String(value) => {
-                                        match column_type.1.as_ref().map(|string| string.as_str()) {
-                                            Some("bigint") => {
-                                                ColumnValue::I64(value.parse::<i64>().unwrap())
-                                            }
-                                            Some("int") | Some("mediumint") => {
-                                                ColumnValue::I32(value.parse::<i32>().unwrap())
-                                            }
-                                            Some("smallint") | Some("year") => {
-                                                ColumnValue::I16(value.parse::<i16>().unwrap())
-                                            }
-                                            Some("tinyint") => {
-                                                ColumnValue::I8(value.parse::<i8>().unwrap())
-                                            }
-                                            Some("double") => {
-                                                ColumnValue::Double(value.parse::<f64>().unwrap())
-                                            }
-                                            Some("float") => {
-                                                ColumnValue::Float(value.parse::<f32>().unwrap())
-                                            }
-                                            Some("timestamp") | Some("datetime") => {
-                                                ColumnValue::DateTime(
-                                                    NaiveDateTime::parse_from_str(
-                                                        &value,
-                                                        "%Y-%m-%d %H:%M:%S%.f",
-                                                    )
-                                                    .unwrap(),
+                                    ColumnValue::String(value) => match column_type.1.as_deref() {
+                                        Some("bigint") => {
+                                            ColumnValue::I64(value.parse::<i64>().unwrap())
+                                        }
+                                        Some("int") | Some("mediumint") => {
+                                            ColumnValue::I32(value.parse::<i32>().unwrap())
+                                        }
+                                        Some("smallint") | Some("year") => {
+                                            ColumnValue::I16(value.parse::<i16>().unwrap())
+                                        }
+                                        Some("tinyint") => {
+                                            ColumnValue::I8(value.parse::<i8>().unwrap())
+                                        }
+                                        Some("double") => {
+                                            ColumnValue::Double(value.parse::<f64>().unwrap())
+                                        }
+                                        Some("float") => {
+                                            ColumnValue::Float(value.parse::<f32>().unwrap())
+                                        }
+                                        Some("timestamp") | Some("datetime") => {
+                                            ColumnValue::DateTime(
+                                                NaiveDateTime::parse_from_str(
+                                                    &value,
+                                                    "%Y-%m-%d %H:%M:%S%.f",
                                                 )
-                                            }
-                                            Some("date") => ColumnValue::Date(
-                                                NaiveDate::parse_from_str(&value, "%Y-%m-%d")
-                                                    .unwrap(),
-                                            ),
-                                            Some("decimal") | Some("text") | Some("char")
-                                            | Some("tinytext") | Some("longtext")
-                                            | Some("mediumtext") | Some("varchar") | None => {
-                                                ColumnValue::String(value)
-                                            }
-                                            Some(any) => {
-                                                println!("Type not mapped {}", any);
-                                                ColumnValue::String(value)
+                                                .unwrap(),
+                                            )
+                                        }
+                                        Some("date") => {
+                                            match NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
+                                                Ok(date) => ColumnValue::Date(date),
+                                                Err(_) => ColumnValue::String(value),
                                             }
                                         }
-                                    }
+                                        Some("decimal") | Some("text") | Some("char")
+                                        | Some("tinytext") | Some("longtext")
+                                        | Some("mediumtext") | Some("varchar") | None => {
+                                            ColumnValue::String(value)
+                                        }
+                                        Some(any) => {
+                                            println!("Type not mapped {}", any);
+                                            ColumnValue::String(value)
+                                        }
+                                    },
                                     _ => panic!("We should only have string format here"),
                                 })
                                 .collect()),
@@ -545,7 +542,7 @@ fn process_expr(
     alias_to_column_and_type: &Vec<(String, String, ColumnType)>,
 ) -> Result<(ColumnName, ColumnType)> {
     match &expr {
-        Expr::Identifier(ident) => Ok(find_type(&alias_to_column_and_type, &ident.value, None)),
+        Expr::Identifier(ident) => Ok(find_type(alias_to_column_and_type, &ident.value, None)),
         Expr::CompoundIdentifier(idents) => {
             if idents.len() > 2 {
                 bail!(
@@ -554,7 +551,7 @@ fn process_expr(
                 );
             }
             Ok(find_type(
-                &alias_to_column_and_type,
+                alias_to_column_and_type,
                 &idents[1].value,
                 Some(&idents[0].value),
             ))
@@ -581,7 +578,7 @@ fn process_expr(
                         },
                         _ => bail!("Cant handle names function arg"),
                     };
-                    if first.1 == None {
+                    if first.1.is_none() {
                         Ok(second)
                     } else {
                         Ok(first)
@@ -603,11 +600,11 @@ fn process_expr(
             }
         }
         Expr::Cast { expr, data_type } => Ok((
-            process_expr(&expr, alias_to_column_and_type)?.0,
+            process_expr(expr, alias_to_column_and_type)?.0,
             Some(data_type.to_string()),
         )),
         Expr::IsNull(expr) | Expr::IsNotNull(expr) => Ok((
-            process_expr(&expr, alias_to_column_and_type)?.0,
+            process_expr(expr, alias_to_column_and_type)?.0,
             Some("tinyint".to_string()),
         )),
         _ => Ok(dbg!(("unknown".to_string(), None))), // We should probably warn this cases

@@ -32,9 +32,7 @@ where
             return self.executor.query(query);
         }
 
-        let result = self
-            .executor
-            .query(&(self.acc.iter().join(";\n") + ";\n" + query));
-        return result;
+        self.executor
+            .query(&(self.acc.iter().join(";\n") + ";\n" + query))
     }
 }

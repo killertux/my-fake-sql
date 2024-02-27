@@ -44,8 +44,8 @@ fn main() -> std::io::Result<()> {
 }
 
 fn tcp_listener(config: YamlTargetConfig) -> std::io::Result<()> {
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))
-        .expect(&format!("Error binding to port {}", config.port));
+    let error_msg = format!("Error binding to port {}", config.port);
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port)).expect(&error_msg);
     let queries_connection_cache: HashSet<String> = match &config.query_cache {
         None => HashSet::new(),
         Some(paths) => paths
@@ -82,7 +82,7 @@ fn spawn_sql_processor(
     data_type_info: &mut Option<DataTypeInfo>,
 ) {
     let target = config.target.clone();
-    let with_type_discovery = config.with_type_discovery.clone();
+    let with_type_discovery = config.with_type_discovery;
     let target_type = config.target_type.clone().unwrap_or(TargetType::MySql);
 
     if let Some(true) = with_type_discovery {

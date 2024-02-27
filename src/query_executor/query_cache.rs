@@ -32,7 +32,7 @@ impl<T: QueryResult> QueryResult for CachedQueryResult<T> {
             CachedQueryResult::Result(result) => result.get_data(),
             CachedQueryResult::CachedResult(cached_result) => (
                 Ok(cached_result.columns),
-                Box::new(cached_result.rows.into_iter().map(|row| Ok(row))),
+                Box::new(cached_result.rows.into_iter().map(Ok)),
             ),
         }
     }
@@ -59,7 +59,7 @@ where
         match self.storage.get(query) {
             None => match self.executor.query(query) {
                 Ok(Some(result)) => {
-                    if let None = self.queries_to_cache.get(query) {
+                    if self.queries_to_cache.get(query).is_none() {
                         return Ok(Some(CachedQueryResult::Result(result)));
                     }
                     let (columns, rows) = result.get_data();

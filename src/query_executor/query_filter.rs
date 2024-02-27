@@ -23,7 +23,7 @@ where
             return Ok(None);
         }
 
-        self.0.query(&query)
+        self.0.query(query)
     }
 }
 
